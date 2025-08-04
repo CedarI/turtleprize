@@ -101,40 +101,9 @@ local function getInventorySummary()
   return summary
 end
 
--- NEW: Pre-flight check to ensure turtle has essential supplies
-local function preFlightCheck()
-  local issues = {}
-  local warnings = {}
-  local fuel_level = turtle.getFuelLevel()
-  
-  -- Check fuel level
-  if type(fuel_level) == "number" and fuel_level < 1000 then
-    table.insert(warnings, "Low fuel: " .. fuel_level .. " (recommend 1000+)")
-  end
-  
-  -- Check for any fuel in inventory
-  local total_fuel_items = 0
-  local fuel_types_found = {}
-  for i = 1, 16 do
-    local item = turtle.getItemDetail(i)
-    if item and FUEL_TYPES[item.name] then
-      total_fuel_items = total_fuel_items + item.count
-      fuel_types_found[item.name] = (fuel_types_found[item.name] or 0) + item.count
-    end
-  end
-  
-  if total_fuel_items == 0 then
-    table.insert(issues, "No fuel found in inventory")
-  else
-    print("Fuel inventory:")
-    for fuel_name, count in pairs(fuel_types_found) do
-      local simple_name = string.gsub(fuel_name, "minecraft:", "")
-      local fuel_value = FUEL_TYPES[fuel_name] * count
-      print("  " .. count .. "x " .. simple_name .. " (" .. fuel_value .. " fuel units)")
-    end
-  end
-  
-  -- Check for bucket
+-- NEW: Check if turtle has essential equipment for autostart
+local function hasEssentialEquipment()
+  -- Check for bucket (absolutely required)
   local has_bucket = false
   for i = 1, 16 do
     local item = turtle.getItemDetail(i)
@@ -143,15 +112,106 @@ local function preFlightCheck()
       break
     end
   end
+  
+  -- Check for any fuel
+  local has_fuel = false
+  for i = 1, 16 do
+    local item = turtle.getItemDetail(i)
+    if item and FUEL_TYPES[item.name] then
+      has_fuel = true
+      break
+    end
+  end
+  
+  -- Check if inventory is completely empty
+  local inventory_empty = true
+  for i = 1, 16 do
+    if turtle.getItemCount(i) > 0 then
+      inventory_empty = false
+      break
+    end
+  end
+  
+  return has_bucket, has_fuel, inventory_empty
+end
+
+-- Enhanced pre-flight check with strict essential equipment requirements
+local function preFlightCheck(allow_autostart)
+  local issues = {}
+  local warnings = {}
+  local fuel_level = turtle.getFuelLevel()
+  
+  -- Check essential equipment first
+  local has_bucket, has_fuel, inventory_empty = hasEssentialEquipment()
+  
+  -- CRITICAL: Bucket is absolutely required
   if not has_bucket then
-    table.insert(warnings, "No bucket found (recommended for lava refueling)")
+    table.insert(issues, "CRITICAL: No bucket found! Bucket is required for lava refueling.")
+  end
+  
+  -- If autostarting, be more strict about equipment
+  if allow_autostart then
+    if inventory_empty then
+      table.insert(issues, "AUTOSTART BLOCKED: Inventory is empty. Turtle needs proper equipment.")
+    end
+    
+    if not has_fuel then
+      table.insert(issues, "AUTOSTART BLOCKED: No fuel found in inventory.")
+    end
+    
+    -- More strict fuel level check for autostart
+    if type(fuel_level) == "number" and fuel_level < 1000 then
+      table.insert(issues, "AUTOSTART BLOCKED: Fuel too low (" .. fuel_level .. "). Need 1000+ for autostart.")
+    end
+  else
+    -- Manual start - more lenient checks
+    if type(fuel_level) == "number" and fuel_level < 1000 then
+      table.insert(warnings, "Low fuel: " .. fuel_level .. " (recommend 1000+)")
+    end
+    
+    if not has_fuel then
+      table.insert(warnings, "No fuel found in inventory")
+    end
+  end
+  
+  -- Show fuel inventory if available
+  if has_fuel then
+    local total_fuel_items = 0
+    local fuel_types_found = {}
+    for i = 1, 16 do
+      local item = turtle.getItemDetail(i)
+      if item and FUEL_TYPES[item.name] then
+        total_fuel_items = total_fuel_items + item.count
+        fuel_types_found[item.name] = (fuel_types_found[item.name] or 0) + item.count
+      end
+    end
+    
+    if total_fuel_items > 0 then
+      print("Fuel inventory:")
+      for fuel_name, count in pairs(fuel_types_found) do
+        local simple_name = string.gsub(fuel_name, "minecraft:", "")
+        local fuel_value = FUEL_TYPES[fuel_name] * count
+        print("  " .. count .. "x " .. simple_name .. " (" .. fuel_value .. " fuel units)")
+      end
+    end
   end
   
   -- Report issues and warnings
   if #issues > 0 then
-    print("PRE-FLIGHT CHECK ERRORS:")
+    print("EQUIPMENT CHECK FAILED:")
     for _, issue in ipairs(issues) do
       print("- " .. issue)
+    end
+    
+    if allow_autostart then
+      print("\nAUTOSTART PREVENTED!")
+      print("This prevents accidental startup when turtle is improperly equipped.")
+      print("To fix:")
+      print("1. Add a bucket (empty or lava bucket)")
+      print("2. Add fuel (coal, charcoal, coal blocks, etc.)")
+      print("3. Ensure fuel level is 1000+")
+      print("\nThen restart the program.")
+      return false
     end
   end
   
@@ -162,7 +222,7 @@ local function preFlightCheck()
     end
   end
   
-  if #issues > 0 or #warnings > 0 then
+  if (#issues > 0 or #warnings > 0) and not allow_autostart then
     print("\nFuel Info: Coal and charcoal work equally well!")
     print("Valid fuel types: coal, charcoal, coal blocks, lava buckets, wood items")
     if #issues > 0 then
@@ -173,12 +233,14 @@ local function preFlightCheck()
         return false
       end
     end
-  else
+  elseif #issues == 0 and #warnings == 0 then
     print("Pre-flight check passed!")
   end
   
   -- Consolidate fuel before starting
-  consolidateFuel()
+  if has_fuel then
+    consolidateFuel()
+  end
   
   return true
 end
@@ -976,17 +1038,38 @@ function listenForCommands()
 end
 
 function runMining(args)
+  local is_autostart = false
+  local state_loaded = false
+  
   if not loadState() or #args > 0 then
     if #args == 0 then 
       print("Usage: miner <width> <length> [strategy]")
       print("Strategies: shaft, branch, hybrid")
+      print("\nNote: Turtle requires bucket and fuel to prevent accidental autostart")
       return 
     end
     init(args)
+    is_autostart = false -- Manual start with arguments
+  else
+    is_autostart = true -- Autostarting from saved state
+    state_loaded = true
+    print("Found saved state - attempting to resume mining...")
+    print("Area: " .. state.width .. "x" .. state.length .. ", Strategy: " .. state.strategy)
   end
   
-  -- Run pre-flight check
-  if not preFlightCheck() then return end
+  -- Run pre-flight check with different strictness based on start type
+  if not preFlightCheck(is_autostart) then 
+    if is_autostart then
+      print("\nTo start fresh (ignore saved state), run:")
+      print("miner <width> <length> [strategy]")
+    end
+    return 
+  end
+  
+  if is_autostart then
+    print("Autostart approved - resuming mining operation...")
+    comms.sendStatus("Resuming mining from saved state...")
+  end
   
   comms.init()
   print("Starting miner. Width: "..state.width..", Length: "..state.length..", Strategy: "..state.strategy)
@@ -1029,22 +1112,28 @@ function main(args)
   comms.sendStatus(final_message .. " Stats: " .. state.statistics.ores_found .. " ores, " .. 
                   state.statistics.blocks_mined .. " blocks, " .. state.statistics.distance_traveled .. " distance")
   
-  pos_lib.goTo(0, 0, 0, final_message .. " Returning home.")
-  
-  -- Final dropoff (preserve essential items) - into chest behind robot
-  pos_lib.turnTo(2) -- Face south (behind starting position) toward main chest
-  for i = 2, 16 do
-    local item = turtle.getItemDetail(i)
-    if item and not ESSENTIAL_ITEMS[item.name] and i ~= FUEL_SLOT then
-        turtle.select(i); turtle.drop()
+  -- FIXED: Keep listening for commands during return home and cleanup
+  local function returnHomeAndCleanup()
+    pos_lib.goTo(0, 0, 0, final_message .. " Returning home.")
+    
+    -- Final dropoff (preserve essential items) - into chest behind robot
+    pos_lib.turnTo(2) -- Face south (behind starting position) toward main chest
+    for i = 2, 16 do
+      local item = turtle.getItemDetail(i)
+      if item and not ESSENTIAL_ITEMS[item.name] and i ~= FUEL_SLOT then
+          turtle.select(i); turtle.drop()
+      end
     end
+    turtle.select(SAFE_SLOT)
+    
+    comms.sendStatus("Mission complete. Final stats: " .. state.statistics.ores_found .. " ores found, " .. 
+                    state.statistics.blocks_mined .. " blocks mined.")
+    saveState()
+    print(final_message .. " Program finished.")
   end
-  turtle.select(SAFE_SLOT)
   
-  comms.sendStatus("Mission complete. Final stats: " .. state.statistics.ores_found .. " ores found, " .. 
-                  state.statistics.blocks_mined .. " blocks mined.")
-  saveState()
-  print(final_message .. " Program finished.")
+  -- Continue listening for commands during cleanup
+  parallel.waitForAny(returnHomeAndCleanup, listenForCommands)
 end
 
 local args = {...}
