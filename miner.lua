@@ -316,14 +316,19 @@ local function loadState()
   return false
 end
 
--- Enhanced initialization with strategy selection
+-- Enhanced initialization with strategy selection and surface override
 local function init(args)
+  local surface_override = nil
+  if args[4] and tonumber(args[4]) then
+    surface_override = tonumber(args[4])
+  end
+  
   state = {
     x = 0, y = 0, z = 0, facing = 0, task = "STARTING",
     width = tonumber(args[1]) or 32, length = tonumber(args[2]) or 64,
     strategy = args[3] or MINING_STRATEGY,
     progress = { x = 0, z = 0, level_index = 1 },
-    surfaceY = nil,
+    surfaceY = surface_override, -- Allow manual surface level override
     inventory = {},
     statistics = { blocks_mined = 0, ores_found = 0, distance_traveled = 0 }
   }
@@ -1045,8 +1050,15 @@ function runMining(args)
   
   if not loadState() or #args > 0 then
     if #args == 0 then 
-      print("Usage: miner <width> <length> [strategy]")
+      print("Usage: miner <width> <length> [strategy] [surface_y]")
+      print("       miner reset")
+      print("")
       print("Strategies: shaft, branch, hybrid")
+      print("Optional: surface_y - manual surface level override")
+      print("Examples:")
+      print("  miner 32 64 branch     # Auto-detect surface")
+      print("  miner 32 64 branch 65  # Force surface at Y=65")
+      print("  miner reset            # Clear saved state")
       print("\nNote: Turtle requires bucket and fuel to prevent accidental autostart")
       return 
     end
@@ -1076,18 +1088,77 @@ function runMining(args)
   comms.init()
   print("Starting miner. Width: "..state.width..", Length: "..state.length..", Strategy: "..state.strategy)
   
-  -- Find surface if needed
+  -- Find surface if needed - IMPROVED LOGIC
   if not state.surfaceY then
     state.task = "FINDING_SURFACE"
     comms.sendStatus("Finding surface level.")
-    while not turtle.detectDown() do
-      if not pos_lib.down() then
-        comms.sendStatus("Cannot find ground. Halting."); state.task = "STUCK"; return
+    
+    -- First, go up to find actual surface (above Y=0)
+    local attempts = 0
+    while state.y < 0 and attempts < 200 do
+      if not pos_lib.up() then
+        -- If we can't go up, try to dig up
+        if not turtle.digUp() then
+          comms.sendStatus("Cannot reach surface - blocked path."); state.task = "STUCK"; return
+        end
+        if not pos_lib.up() then break end
+      end
+      attempts = attempts + 1
+    end
+    
+    -- Now find the actual surface level
+    -- Go up until we find sky access (no block above for several levels)
+    while state.y < 320 do -- Max build height
+      local air_levels = 0
+      local temp_y = state.y
+      
+      -- Check if we have clear sky above (3+ air blocks)
+      for check_up = 1, 3 do
+        local success, data = turtle.inspectUp()
+        if not success then -- Air block
+          air_levels = air_levels + 1
+        else
+          break
+        end
+        if not pos_lib.up() then break end
+      end
+      
+      -- Return to starting check position
+      while state.y > temp_y do
+        pos_lib.down()
+      end
+      
+      -- If we found clear sky, this is likely surface level
+      if air_levels >= 3 then
+        break
+      end
+      
+      -- Otherwise keep going up
+      if not turtle.digUp() then
+        if not pos_lib.up() then break end  
+      else
+        if not pos_lib.up() then break end
       end
     end
-    while turtle.detectUp() do pos_lib.up() end
+    
+    -- Go down to find solid ground level
+    while not turtle.detectDown() and state.y > -64 do
+      if not pos_lib.down() then break end
+    end
+    
+    -- Go up one level to be on top of solid ground
+    if turtle.detectDown() then
+      pos_lib.up()
+    end
+    
     state.surfaceY = state.y
     comms.sendStatus("Surface found at Y=" .. state.surfaceY)
+    
+    -- Sanity check - surface should be reasonable
+    if state.surfaceY < -60 or state.surfaceY > 200 then
+      comms.sendStatus("WARNING: Unusual surface level Y=" .. state.surfaceY .. ". Continuing anyway.")
+    end
+    
     saveState()
   end
 
@@ -1102,6 +1173,17 @@ function runMining(args)
 end
 
 function main(args)
+  -- Special reset command to clear bad state
+  if args[1] == "reset" then
+    if fs.exists(STATE_FILE) then
+      fs.delete(STATE_FILE)
+      print("State file deleted. Turtle will start fresh next time.")
+    else
+      print("No state file found.")
+    end
+    return
+  end
+  
   parallel.waitForAny(function() runMining(args) end, listenForCommands)
 
   local final_message = "Mining operation complete."
