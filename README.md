@@ -48,7 +48,7 @@ miner 24 48 shaft     # Traditional shaft mining
 
 ### Shaft Mining
 - Traditional surface-to-bedrock mining
-- Improved spacing pattern covers more area than original
+- Improved spacing pattern covers more area
 - Good for smaller areas or when you need complete coverage
 
 ## Fuel Management
@@ -57,7 +57,7 @@ The turtle intelligently handles multiple fuel types:
 - **Coal & Charcoal**: 80 fuel units each (completely interchangeable)
 - **Coal Blocks**: 800 fuel units (most efficient)  
 - **Lava Buckets**: 1000 fuel units (excellent for long operations)
-- **Wood Items**: 5-15 fuel units (emergency backup)
+- **Wood Items**: 5–15 fuel units (emergency backup)
 
 ### Critical Fuel Handling
 When fuel drops below 100 units:
