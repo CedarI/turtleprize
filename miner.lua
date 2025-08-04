@@ -101,6 +101,37 @@ local function getInventorySummary()
   return summary
 end
 
+-- Enhanced fuel management functions (moved up to fix call order)
+
+-- Find fuel in inventory and move it to fuel slot
+local function consolidateFuel()
+  local fuel_slot_item = turtle.getItemDetail(FUEL_SLOT)
+  
+  -- If fuel slot is empty, find fuel elsewhere
+  if not fuel_slot_item then
+    for i = 2, 16 do
+      local item = turtle.getItemDetail(i)
+      if item and FUEL_TYPES[item.name] then
+        turtle.select(i)
+        turtle.transferTo(FUEL_SLOT, item.count)
+        print("Moved " .. item.name .. " to fuel slot")
+        break
+      end
+    end
+  else
+    -- If fuel slot has fuel, consolidate more of the same type
+    for i = 2, 16 do
+      local item = turtle.getItemDetail(i)
+      if item and item.name == fuel_slot_item.name then
+        turtle.select(i)
+        turtle.transferTo(FUEL_SLOT, item.count)
+      end
+    end
+  end
+  
+  turtle.select(SAFE_SLOT)
+end
+
 -- NEW: Check if turtle has essential equipment for autostart
 local function hasEssentialEquipment()
   -- Check for bucket (absolutely required)
@@ -465,36 +496,7 @@ local function manageJunk()
   turtle.select(SAFE_SLOT)
 end
 
--- Enhanced fuel management functions
-
--- Find fuel in inventory and move it to fuel slot
-local function consolidateFuel()
-  local fuel_slot_item = turtle.getItemDetail(FUEL_SLOT)
-  
-  -- If fuel slot is empty, find fuel elsewhere
-  if not fuel_slot_item then
-    for i = 2, 16 do
-      local item = turtle.getItemDetail(i)
-      if item and FUEL_TYPES[item.name] then
-        turtle.select(i)
-        turtle.transferTo(FUEL_SLOT, item.count)
-        print("Moved " .. item.name .. " to fuel slot")
-        break
-      end
-    end
-  else
-    -- If fuel slot has fuel, consolidate more of the same type
-    for i = 2, 16 do
-      local item = turtle.getItemDetail(i)
-      if item and item.name == fuel_slot_item.name then
-        turtle.select(i)
-        turtle.transferTo(FUEL_SLOT, item.count)
-      end
-    end
-  end
-  
-  turtle.select(SAFE_SLOT)
-end
+-- Enhanced fuel management functions (continued)
 
 -- Try to refuel from base fuel chest
 local function refuelFromBase()
