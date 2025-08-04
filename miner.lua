@@ -111,7 +111,7 @@ local function consolidateFuel()
   if not fuel_slot_item then
     for i = 2, 16 do
       local item = turtle.getItemDetail(i)
-      if item and FUEL_TYPES[item.name] then
+      if item and FUEL_TYPES[item.name] and not ESSENTIAL_ITEMS[item.name] then
         turtle.select(i)
         turtle.transferTo(FUEL_SLOT, item.count)
         print("Moved " .. item.name .. " to fuel slot")
@@ -122,7 +122,7 @@ local function consolidateFuel()
     -- If fuel slot has fuel, consolidate more of the same type
     for i = 2, 16 do
       local item = turtle.getItemDetail(i)
-      if item and item.name == fuel_slot_item.name then
+      if item and item.name == fuel_slot_item.name and not ESSENTIAL_ITEMS[item.name] then
         turtle.select(i)
         turtle.transferTo(FUEL_SLOT, item.count)
       end
@@ -507,44 +507,72 @@ end
 local function refuelFromBase()
   local current_x, current_y, current_z = state.x, state.y, state.z
   
-  comms.sendStatus("Low fuel. Checking base for fuel supplies.")
+  comms.sendStatus("Low fuel. Returning to base for fuel and inventory dropoff.")
   
   -- Go to base
   if not pos_lib.goTo(0, 0, 0, "Returning to base for fuel") then return false end
   
-  -- Face west (left) toward fuel chest
-  pos_lib.turnTo(3) -- Direction 3 = west (left from starting position)
+  -- FIRST: Drop off inventory in main chest (south/behind)
+  pos_lib.turnTo(2) -- Face south toward main chest
+  for i = 2, 16 do
+    local item = turtle.getItemDetail(i)
+    if item and not ESSENTIAL_ITEMS[item.name] and i ~= FUEL_SLOT then
+      turtle.select(i); turtle.drop()
+    end
+  end
+  comms.sendStatus("Inventory deposited. Getting fuel...")
   
-  -- Try to suck fuel from chest
-  local fuel_found = false
-  for fuel_name, _ in pairs(FUEL_TYPES) do
+  -- SECOND: Get fuel from fuel chest (west/left)
+  pos_lib.turnTo(3) -- Face west toward fuel chest
+  
+  -- Try to get multiple fuel items until we have enough
+  local fuel_attempts = 0
+  local fuel_target = FUEL_LOW_THRESHOLD * 3 -- Target 3x the low threshold
+  
+  while turtle.getFuelLevel() < fuel_target and fuel_attempts < 10 do
     turtle.select(FUEL_SLOT)
-    if turtle.suck() then
+    
+    -- Check if fuel slot has room and is the right type
+    local fuel_slot_item = turtle.getItemDetail(FUEL_SLOT)
+    local slot_has_space = not fuel_slot_item or fuel_slot_item.count < 64
+    
+    if slot_has_space and turtle.suck() then
       local item = turtle.getItemDetail(FUEL_SLOT)
       if item and FUEL_TYPES[item.name] then
-        fuel_found = true
-        print("Found " .. item.name .. " in fuel chest")
-        break
+        -- Refuel as much as we can from this stack
+        local fuel_value = FUEL_TYPES[item.name]
+        local items_needed = math.ceil((fuel_target - turtle.getFuelLevel()) / fuel_value)
+        local items_to_use = math.min(items_needed, item.count)
+        
+        turtle.refuel(items_to_use)
+        print("Used " .. items_to_use .. "x " .. item.name .. " for fuel. Level: " .. turtle.getFuelLevel())
+        
+        fuel_attempts = fuel_attempts + 1
       else
-        turtle.drop() -- Put back non-fuel items
+        -- Not fuel, put it back
+        turtle.drop()
+        break -- Stop trying if we're getting non-fuel items
       end
+    else
+      break -- Can't get more fuel
     end
   end
   
-  if fuel_found then
-    turtle.select(FUEL_SLOT)
-    turtle.refuel()
-    comms.sendStatus("Refueled at base. Returning to work.")
-  end
-  
   turtle.select(SAFE_SLOT)
+  
+  local final_fuel = turtle.getFuelLevel()
+  if final_fuel >= FUEL_LOW_THRESHOLD then
+    comms.sendStatus("Refueled successfully! Level: " .. final_fuel .. ". Returning to work.")
+  else
+    comms.sendStatus("Refueling incomplete. Level: " .. final_fuel .. ". Returning anyway.")
+  end
   
   -- Return to previous position
   if not pos_lib.goTo(current_x, current_y, current_z, "Returning to work area") then
     return false
   end
   
-  return fuel_found
+  return final_fuel >= FUEL_LOW_THRESHOLD
 end
 
 local function findEmptyBucket()
@@ -587,9 +615,11 @@ local function ensureFuel()
     local fuel_item = turtle.getItemDetail(FUEL_SLOT)
     if fuel_item and FUEL_TYPES[fuel_item.name] then
       local fuel_value = FUEL_TYPES[fuel_item.name]
-      local fuel_needed = math.ceil((FUEL_LOW_THRESHOLD * 2 - state.fuelLevel) / fuel_value)
-      turtle.refuel(math.min(fuel_needed, fuel_item.count))
-      print("Used " .. fuel_item.name .. " for fuel")
+      local fuel_target = FUEL_LOW_THRESHOLD * 2 -- Target 2x the low threshold
+      local fuel_needed = math.ceil((fuel_target - state.fuelLevel) / fuel_value)
+      local fuel_to_use = math.min(fuel_needed, fuel_item.count)
+      turtle.refuel(fuel_to_use)
+      print("Used " .. fuel_to_use .. "x " .. fuel_item.name .. " for fuel. Level: " .. turtle.getFuelLevel())
     end
     turtle.select(SAFE_SLOT)
     
@@ -618,6 +648,15 @@ local function ensureFuel()
       end
     end
     
+    -- Drop off inventory first
+    pos_lib.turnTo(2) -- Face south toward main chest
+    for i = 2, 16 do
+      local item = turtle.getItemDetail(i)
+      if item and not ESSENTIAL_ITEMS[item.name] and i ~= FUEL_SLOT then
+        turtle.select(i); turtle.drop()
+      end
+    end
+    
     -- Wait at base until fuel is available
     comms.sendStatus("WAITING FOR FUEL. Please add fuel to the fuel chest (to the left).")
     print("CRITICAL FUEL - Waiting at base for fuel to be added to fuel chest...")
@@ -630,14 +669,21 @@ local function ensureFuel()
       turtle.select(FUEL_SLOT)
       
       local fuel_added = false
-      -- Try to get fuel from chest
+      -- Try to get fuel from chest and refuel immediately
       if turtle.suck() then
         local item = turtle.getItemDetail(FUEL_SLOT)
-        if item and FUEL_TYPES[item.name] then
+        if item and FUEL_TYPES[item.name] and not ESSENTIAL_ITEMS[item.name] then
           print("Found " .. item.name .. " in fuel chest!")
+          
+          -- Refuel the entire stack
+          local fuel_value = FUEL_TYPES[item.name]
+          local fuel_before = turtle.getFuelLevel()
           turtle.refuel(item.count)
+          local fuel_after = turtle.getFuelLevel()
+          
+          print("Refueled +" .. (fuel_after - fuel_before) .. " fuel")
           fuel_added = true
-          comms.sendStatus("Refueled! Fuel level: " .. turtle.getFuelLevel())
+          comms.sendStatus("Refueled! Fuel level: " .. fuel_after)
         else
           turtle.drop() -- Put back non-fuel items
         end
@@ -814,31 +860,34 @@ end
 local function returnToBase()
   local current_x, current_y, current_z = state.x, state.y, state.z
   
-  -- Try to use ender chest first
-  for i = 2, 16 do
-    local item = turtle.getItemDetail(i)
-    if item and item.name == "minecraft:ender_chest" then
-      turtle.select(i)
-      turtle.placeDown()
-      
-      -- Dump valuable items (but keep essential items)
-      for j = 2, 16 do
-        local dump_item = turtle.getItemDetail(j)
-        if dump_item and not JUNK_ITEMS[dump_item.name] and not ESSENTIAL_ITEMS[dump_item.name] and j ~= FUEL_SLOT then
-          turtle.select(j)
-          turtle.dropDown()
+  -- Try to use ender chest first (only if not already at surface)
+  if state.y < (state.surfaceY - 5) then -- Only use ender chest if deep underground
+    for i = 2, 16 do
+      local item = turtle.getItemDetail(i)
+      if item and item.name == "minecraft:ender_chest" then
+        turtle.select(i)
+        turtle.placeDown()
+        
+        -- Dump valuable items (but keep essential items)
+        for j = 2, 16 do
+          local dump_item = turtle.getItemDetail(j)
+          if dump_item and not JUNK_ITEMS[dump_item.name] and not ESSENTIAL_ITEMS[dump_item.name] and j ~= FUEL_SLOT then
+            turtle.select(j)
+            turtle.dropDown()
+          end
         end
+        
+        turtle.select(i)
+        turtle.digDown()
+        turtle.select(SAFE_SLOT)
+        comms.sendStatus("Used ender chest for remote storage. Continuing mining.")
+        return current_x, current_y, current_z -- Return current position
       end
-      
-      turtle.select(i)
-      turtle.digDown()
-      turtle.select(SAFE_SLOT)
-      return current_x, current_y, current_z -- Return current position
     end
   end
   
-  -- Fallback: return to base
-  comms.sendStatus("Inventory full. Returning to base.")
+  -- Fallback: return to base and use refuelFromBase which handles both inventory and fuel
+  comms.sendStatus("Inventory full. Returning to base for dropoff and refuel check.")
   if not pos_lib.goTo(0, 0, 0, "Returning to base") then return nil end
   
   -- Face south (behind starting position) toward main chest
@@ -850,6 +899,25 @@ local function returnToBase()
     end
   end
   turtle.select(SAFE_SLOT)
+  
+  -- Also check fuel while we're here
+  if turtle.getFuelLevel() < FUEL_LOW_THRESHOLD * 1.5 then
+    comms.sendStatus("Also topping off fuel while at base...")
+    
+    pos_lib.turnTo(3) -- Face west toward fuel chest
+    turtle.select(FUEL_SLOT)
+    
+    if turtle.suck() then
+      local item = turtle.getItemDetail(FUEL_SLOT)
+      if item and FUEL_TYPES[item.name] and not ESSENTIAL_ITEMS[item.name] then
+        turtle.refuel(math.min(16, item.count)) -- Refuel some but not all
+        print("Topped off fuel: " .. turtle.getFuelLevel())
+      else
+        turtle.drop() -- Put back non-fuel
+      end
+    end
+    turtle.select(SAFE_SLOT)
+  end
   
   return current_x, current_y, current_z
 end
@@ -1191,14 +1259,23 @@ function main(args)
     final_message = "Recalled by operator."
   elseif state.task == "STUCK" then 
     final_message = "Halted due to an obstacle." 
+  elseif state.task == "AWAITING_FUEL" then
+    final_message = "Halted due to fuel shortage."
   end
   
   comms.sendStatus(final_message .. " Stats: " .. state.statistics.ores_found .. " ores, " .. 
                   state.statistics.blocks_mined .. " blocks, " .. state.statistics.distance_traveled .. " distance")
   
-  -- FIXED: Keep listening for commands during return home and cleanup
+  -- FIXED: Always return home first, then do cleanup
   local function returnHomeAndCleanup()
-    pos_lib.goTo(0, 0, 0, final_message .. " Returning home.")
+    -- Return to base regardless of why we stopped
+    if state.x ~= 0 or state.y ~= 0 or state.z ~= 0 then
+      local return_status = final_message .. " Returning home."
+      if recall_activated then
+        return_status = "Recalled - returning to base for inventory dropoff."
+      end
+      pos_lib.goTo(0, 0, 0, return_status)
+    end
     
     -- Final dropoff (preserve essential items) - into chest behind robot
     pos_lib.turnTo(2) -- Face south (behind starting position) toward main chest
@@ -1210,8 +1287,15 @@ function main(args)
     end
     turtle.select(SAFE_SLOT)
     
-    comms.sendStatus("Mission complete. Final stats: " .. state.statistics.ores_found .. " ores found, " .. 
-                    state.statistics.blocks_mined .. " blocks mined.")
+    local final_stats_msg = "Mission complete. Final stats: " .. state.statistics.ores_found .. " ores found, " .. 
+                           state.statistics.blocks_mined .. " blocks mined."
+    
+    if recall_activated then
+      final_stats_msg = "Recall complete. Stats: " .. state.statistics.ores_found .. " ores found, " .. 
+                       state.statistics.blocks_mined .. " blocks mined."
+    end
+    
+    comms.sendStatus(final_stats_msg)
     saveState()
     print(final_message .. " Program finished.")
   end
