@@ -660,48 +660,90 @@ local function ensureFuel()
     -- Wait at base until fuel is available
     comms.sendStatus("WAITING FOR FUEL. Please add fuel to the fuel chest (to the left).")
     print("CRITICAL FUEL - Waiting at base for fuel to be added to fuel chest...")
+    print("Current fuel level: " .. turtle.getFuelLevel())
 
     while type(turtle.getFuelLevel()) == "number" and turtle.getFuelLevel() < 500 do
       if recall_activated then return false end
 
       -- Check fuel chest periodically
       pos_lib.turnTo(3) -- Face west toward fuel chest
+
+      -- Clear fuel slot first to make room
       turtle.select(FUEL_SLOT)
+      local existing_fuel = turtle.getItemDetail(FUEL_SLOT)
+      if existing_fuel then
+        print("Fuel slot has: " .. existing_fuel.count .. "x " .. existing_fuel.name)
+      else
+        print("Fuel slot is empty")
+      end
 
       local fuel_added = false
-      -- Try to get fuel from chest and refuel immediately
-      if turtle.suck() then
-        local item = turtle.getItemDetail(FUEL_SLOT)
-        if item and FUEL_TYPES[item.name] and not ESSENTIAL_ITEMS[item.name] then
-          print("Found " .. item.name .. " in fuel chest!")
+      local attempts = 0
 
-          -- Refuel the entire stack
-          local fuel_value = FUEL_TYPES[item.name]
-          local fuel_before = turtle.getFuelLevel()
-          turtle.refuel(item.count)
-          local fuel_after = turtle.getFuelLevel()
+      -- Try multiple times to get fuel and refuel
+      while turtle.getFuelLevel() < 500 and attempts < 5 do
+        attempts = attempts + 1
+        print("Fuel attempt " .. attempts .. "/5")
 
-          print("Refueled +" .. (fuel_after - fuel_before) .. " fuel")
-          fuel_added = true
-          comms.sendStatus("Refueled! Fuel level: " .. fuel_after)
+        -- Try to get fuel from chest
+        if turtle.suck() then
+          local item = turtle.getItemDetail(FUEL_SLOT)
+          if item then
+            print("Got from chest: " .. item.count .. "x " .. item.name)
+
+            if FUEL_TYPES[item.name] then
+              print("This is valid fuel! Refueling...")
+
+              -- Refuel the entire stack
+              local fuel_before = turtle.getFuelLevel()
+              local fuel_consumed = turtle.refuel(item.count)
+              local fuel_after = turtle.getFuelLevel()
+
+              print("Fuel before: " .. fuel_before)
+              print("Items consumed: " .. fuel_consumed)
+              print("Fuel after: " .. fuel_after)
+              print("Fuel gained: " .. (fuel_after - fuel_before))
+
+              if fuel_after > fuel_before then
+                fuel_added = true
+                comms.sendStatus("Refueled! Fuel level: " .. fuel_after)
+              else
+                print("WARNING: No fuel gained despite consuming items!")
+              end
+            else
+              print("Not fuel: " .. item.name .. " - putting back")
+              turtle.drop() -- Put back non-fuel items
+            end
+          else
+            print("Got nothing from chest or fuel slot is full")
+            break -- Stop trying if we can't get anything
+          end
         else
-          turtle.drop() -- Put back non-fuel items
+          print("Cannot suck from fuel chest - might be empty")
+          break -- Stop if chest is empty
         end
+
+        -- Small delay between attempts
+        os.sleep(0.5)
       end
 
       turtle.select(SAFE_SLOT)
 
       if not fuel_added then
         -- Still no fuel, wait and try again
-        comms.sendStatus("Still waiting for fuel. Current: " .. turtle.getFuelLevel() .. "/500 needed")
+        local current_fuel = turtle.getFuelLevel()
+        comms.sendStatus("Still waiting for fuel. Current: " .. current_fuel .. "/500 needed")
+        print("Still need fuel. Current: " .. current_fuel .. "/500")
         os.sleep(5) -- Wait 5 seconds before checking again
       end
     end
 
     if type(turtle.getFuelLevel()) == "number" and turtle.getFuelLevel() >= 500 then
       comms.sendStatus("Fuel restored! Level: " .. turtle.getFuelLevel() .. ". Resuming operations.")
-      print("Fuel restored! Resuming mining operations.")
+      print("Fuel restored! Level: " .. turtle.getFuelLevel() .. ". Resuming mining operations.")
       return true
+    else
+      print("Still low fuel after attempts: " .. turtle.getFuelLevel())
     end
   end
 
@@ -1120,6 +1162,7 @@ function runMining(args)
     if #args == 0 then
       print("Usage: miner <width> <length> [strategy] [surface_y]")
       print("       miner reset")
+      print("       miner fueltest")
       print("")
       print("Strategies: shaft, branch, hybrid")
       print("Optional: surface_y - manual surface level override")
@@ -1127,6 +1170,7 @@ function runMining(args)
       print("  miner 32 64 branch     # Auto-detect surface")
       print("  miner 32 64 branch 65  # Force surface at Y=65")
       print("  miner reset            # Clear saved state")
+      print("  miner fueltest         # Debug fuel system")
       print("\nNote: Turtle requires bucket and fuel to prevent accidental autostart")
       return
     end
@@ -1232,7 +1276,7 @@ function runMining(args)
 end
 
 function main(args)
-  -- Special reset command to clear bad state
+  -- Special commands
   if args[1] == "reset" then
     if fs.exists(STATE_FILE) then
       fs.delete(STATE_FILE)
@@ -1240,6 +1284,74 @@ function main(args)
     else
       print("No state file found.")
     end
+    return
+  end
+
+  -- DEBUG: Manual fuel test command
+  if args[1] == "fueltest" then
+    -- Initialize basic state for testing
+    if not state.facing then
+      state = { x = 0, y = 0, z = 0, facing = 0 }
+    end
+
+    print("=== FUEL SYSTEM TEST ===")
+    print("Current fuel level: " .. turtle.getFuelLevel())
+    print("Turtle facing: " .. state.facing)
+
+    -- Test fuel chest access
+    print("Testing fuel chest access (west/left)...")
+    pos_lib.turnTo(3) -- Face west
+    turtle.select(FUEL_SLOT)
+
+    local current_fuel_item = turtle.getItemDetail(FUEL_SLOT)
+    print("Fuel slot before: " .. (current_fuel_item and (current_fuel_item.count .. "x " .. current_fuel_item.name) or "empty"))
+
+    if turtle.suck() then
+      local item = turtle.getItemDetail(FUEL_SLOT)
+      if item then
+        print("Successfully got: " .. item.count .. "x " .. item.name)
+        if FUEL_TYPES[item.name] then
+          print("This is valid fuel type!")
+          print("Fuel value per item: " .. FUEL_TYPES[item.name])
+
+          local before = turtle.getFuelLevel()
+          local consumed = turtle.refuel(1) -- Try refueling just 1 item
+          local after = turtle.getFuelLevel()
+
+          print("Refuel test results:")
+          print("  Before: " .. before)
+          print("  Items consumed: " .. consumed)
+          print("  After: " .. after)
+          print("  Fuel gained: " .. (after - before))
+
+          if consumed > 0 then
+            print("SUCCESS: Refueling works!")
+          else
+            print("PROBLEM: No items consumed!")
+          end
+        else
+          print("ERROR: Not a recognized fuel type!")
+          print("Available fuel types:")
+          for fuel_name, fuel_value in pairs(FUEL_TYPES) do
+            print("  " .. fuel_name .. " = " .. fuel_value)
+          end
+          print("Putting item back...")
+          turtle.drop()
+        end
+      else
+        print("ERROR: Suck succeeded but got nothing?")
+      end
+    else
+      print("ERROR: Cannot suck from fuel chest!")
+      print("Troubleshooting checklist:")
+      print("1. Is there a chest to the LEFT (west) of turtle?")
+      print("2. Does the chest contain coal or other fuel?")
+      print("3. Is the turtle's fuel slot (slot 1) available?")
+      print("4. Is the turtle facing the correct direction?")
+    end
+
+    turtle.select(SAFE_SLOT)
+    print("=== TEST COMPLETE ===")
     return
   end
 
