@@ -8,12 +8,57 @@ local SCAN_RADIUS = 64 -- Maximum scan radius (adjust based on performance)
 local REFRESH_RATE = 2 -- Seconds between scans
 local VERSION = "1.0"
 
--- Check for required peripherals
-local geo = peripheral.find("geoScanner")
+-- Check for required peripherals with multiple possible names
+local geo = nil
+local possible_names = {"geoScanner", "geo_scanner", "geoscanner", "GeoScanner"}
+
+-- Try to find geo scanner with different names
+for _, name in ipairs(possible_names) do
+    geo = peripheral.find(name)
+    if geo then
+        print("Found geo scanner as: " .. name)
+        break
+    end
+end
+
+-- If still not found, try looking through all peripherals
+if not geo then
+    print("Geo scanner not found with standard names.")
+    print("Checking all available peripherals...")
+    
+    local all_peripherals = peripheral.getNames()
+    for _, name in ipairs(all_peripherals) do
+        local p = peripheral.wrap(name)
+        if p and p.scan then  -- Check if it has the scan method
+            geo = p
+            print("Found geo scanner peripheral: " .. name)
+            break
+        end
+    end
+end
+
+-- Final check and error handling
 if not geo then
     print("ERROR: Geo Scanner not found!")
-    print("This app requires an Advanced Pocket Computer")
-    print("with the Geo Scanner addon from Advanced Peripherals.")
+    print("")
+    print("Available peripherals:")
+    local all_peripherals = peripheral.getNames()
+    if #all_peripherals == 0 then
+        print("  (none)")
+    else
+        for _, name in ipairs(all_peripherals) do
+            local p = peripheral.wrap(name)
+            print("  " .. name .. " - " .. peripheral.getType(name))
+        end
+    end
+    print("")
+    print("Requirements:")
+    print("1. Advanced Pocket Computer (not regular)")
+    print("2. Geo Scanner addon from Advanced Peripherals")
+    print("3. Make sure Advanced Peripherals mod is installed")
+    print("")
+    print("If you see a geo scanner above but it's not working,")
+    print("the peripheral name might be different. Please report this.")
     return
 end
 
