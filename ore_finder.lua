@@ -1,12 +1,68 @@
----------------------------------------------------------------------
+-- DEBUG SCANNER
+local function debugScanner()
+    clearScreen()
+    drawHeader()
+    
+    term.setCursorPos(1, 4)
+    term.write("DEBUG SCANNER")
+    term.setCursorPos(1, 5)
+    term.write("=============")
+    
+    term.setCursorPos(1, 7)
+    term.write("Enter block name to scan for:")
+    term.setCursorPos(1, 8)
+    term.write("Example: minecraft:copper_ore")
+    term.setCursorPos(1, 9)
+    term.write("> ")
+    
+    local block_name = read()
+    if not block_name or block_name == "" then
+        return
+    end
+    
+    term.setCursorPos(1, 11)
+    term.write("Scanning for " .. block_name .. " within " .. SCAN_RADIUS .. " blocks...")
+    
+    local blocks = geo.scan(SCAN_RADIUS, block_name)
+    
+    term.setCursorPos(1, 13)
+    if blocks then
+        term.write("Scanner returned: " .. #blocks .. " results")
+        
+        if #blocks > 0 then
+            term.setCursorPos(1, 15)
+            term.write("Found blocks:")
+            local y = 16
+            for i, block in ipairs(blocks) do
+                if y > 18 then -- Don't overflow screen
+                    term.setCursorPos(1, y)
+                    term.write("... and " .. (#blocks - i + 1) .. " more")
+                    break
+                end
+                term.setCursorPos(3, y)
+                term.write(i .. ". Position: " .. block.x .. ", " .. block.y .. ", " .. block.z)
+                y = y + 1
+            end
+        else
+            term.setCursorPos(1, 15)
+            term.write("No blocks found.")
+        end
+    else
+        term.write("Scanner returned: nil (error or not found)")
+    end
+    
+    term.setCursorPos(1, 20)
+    term.write("Press any key to continue...")
+    os.pullEvent("char")
+end---------------------------------------------------------------------
 -- ATM10 ORE FINDER - Advanced Pocket Computer Geo Scanner App
 -- Requires: Advanced Pocket Computer + Geo Scanner from Advanced Peripherals
 ---------------------------------------------------------------------
 
 -- CONFIGURATION
-local SCAN_RADIUS = 64 -- Maximum scan radius (adjust based on performance)
+local SCAN_RADIUS = 16 -- Reduced for debugging - was causing issues at 64
 local REFRESH_RATE = 2 -- Seconds between scans
-local VERSION = "1.0"
+local VERSION = "1.1-debug"
 
 -- Check for geo scanner - simplified approach since we know it's on "back"
 local geo = nil
@@ -272,29 +328,44 @@ local function scanForOres(ore_blocks)
     updatePlayerPosition()
     
     local results = {}
+    local debug_info = {}
     
     -- Scan for each block type
     for _, block_name in ipairs(ore_blocks) do
+        print("DEBUG: Scanning for " .. block_name .. "...")
         local blocks = geo.scan(SCAN_RADIUS, block_name)
-        if blocks and #blocks > 0 then
-            for _, block in ipairs(blocks) do
-                local distance = calculateDistance(
-                    player_pos.x, player_pos.y, player_pos.z,
-                    block.x, block.y, block.z
-                )
-                table.insert(results, {
-                    x = block.x,
-                    y = block.y, 
-                    z = block.z,
-                    distance = distance,
-                    block_name = block_name
-                })
+        
+        if blocks then
+            print("DEBUG: Scanner returned " .. #blocks .. " results for " .. block_name)
+            debug_info[block_name] = #blocks
+            
+            if #blocks > 0 then
+                for _, block in ipairs(blocks) do
+                    print("DEBUG: Found " .. block_name .. " at " .. block.x .. "," .. block.y .. "," .. block.z)
+                    local distance = calculateDistance(
+                        player_pos.x, player_pos.y, player_pos.z,
+                        block.x, block.y, block.z
+                    )
+                    table.insert(results, {
+                        x = block.x,
+                        y = block.y, 
+                        z = block.z,
+                        distance = distance,
+                        block_name = block_name
+                    })
+                end
             end
+        else
+            print("DEBUG: Scanner returned nil for " .. block_name)
+            debug_info[block_name] = "nil"
         end
     end
     
     -- Sort by distance
     table.sort(results, function(a, b) return a.distance < b.distance end)
+    
+    -- Store debug info for display
+    results.debug_info = debug_info
     
     return results
 end
@@ -318,8 +389,14 @@ local function drawMainMenu()
         index = index + 1
     end
     
+    term.setCursorPos(3, y)
+    term.setTextColor(colors.gray)
+    term.write("d. Debug Scanner")
+    term.setTextColor(colors.white)
+    y = y + 1
+    
     term.setCursorPos(1, y + 1)
-    term.write("Enter number (1-" .. (#ORE_CATEGORIES) .. ") or 'q' to quit:")
+    term.write("Enter number (1-" .. (#ORE_CATEGORIES) .. "), 'd' for debug, or 'q' to quit:")
 end
 
 local function drawOreMenu()
@@ -446,6 +523,10 @@ local function handleMainMenuInput()
     
     if key == "q" then
         return false
+    elseif key == "d" then
+        debugScanner()
+        drawMainMenu()
+        return true
     end
     
     local num = tonumber(key)
