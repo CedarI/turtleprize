@@ -60,8 +60,9 @@ end---------------------------------------------------------------------
 ---------------------------------------------------------------------
 
 -- CONFIGURATION
-local REFRESH_RATE = 3 -- Seconds between automatic scans
-local VERSION = "1.3-fixed-api"
+local SCAN_RADIUS = 16 -- Scan radius for geo scanner
+local REFRESH_RATE = 5 -- Seconds between automatic scans (account for cooldown)
+local VERSION = "1.4-correct-api"
 
 -- Check for geo scanner - simplified approach since we know it's on "back"
 local geo = nil
@@ -355,14 +356,23 @@ local function updatePlayerPosition()
     return true -- Always return true since relative positioning always works
 end
 
--- DIRECTION CALCULATION (Fixed)
+-- DIRECTION CALCULATION (Fixed with nil checks)
 local function calculateDistance(x1, y1, z1, x2, y2, z2)
+    -- Safety check for nil values
+    if not x1 or not y1 or not z1 or not x2 or not y2 or not z2 then
+        print("DEBUG: calculateDistance got nil value(s): " .. tostring(x1) .. "," .. tostring(y1) .. "," .. tostring(z1) .. " to " .. tostring(x2) .. "," .. tostring(y2) .. "," .. tostring(z2))
+        return 0
+    end
+    
     return math.sqrt((x2-x1)^2 + (y2-y1)^2 + (z2-z1)^2)
 end
 
 local function calculateDirection(dx, dz)
     -- Ensure we have valid numbers
-    if not dx or not dz then return {arrow = "?", name = "Unknown"} end
+    if not dx or not dz then 
+        print("DEBUG: calculateDirection got nil values: dx=" .. tostring(dx) .. ", dz=" .. tostring(dz))
+        return {arrow = "?", name = "Unknown"} 
+    end
     
     -- Handle zero case
     if dx == 0 and dz == 0 then return {arrow = "●", name = "Here"} end
@@ -383,19 +393,37 @@ local function calculateDirection(dx, dz)
     end
 end
 
--- SCANNING FUNCTIONS (Fixed to use correct geo scanner API)
+-- SCANNING FUNCTIONS (Using correct geo scanner API from documentation)
 local function scanForOres(ore_blocks)
     -- Always update position
     updatePlayerPosition()
     
-    print("DEBUG: Player position: " .. player_pos.x .. ", " .. player_pos.y .. ", " .. player_pos.z)
-    print("DEBUG: Scanning all blocks...")
+    print("DEBUG: Player position: " .. tostring(player_pos.x) .. ", " .. tostring(player_pos.y) .. ", " .. tostring(player_pos.z))
     
-    -- Use the correct API - scan all blocks at once
-    local all_blocks = geoscanner.scan()
+    -- Check scan cooldown
+    local cooldown = geoscanner.getScanCooldown()
+    if cooldown > 0 then
+        print("DEBUG: Scan on cooldown for " .. cooldown .. " ticks")
+        return {}
+    end
+    
+    -- Check fuel level
+    local fuel = geoscanner.getFuelLevel()
+    local cost = geoscanner.cost(SCAN_RADIUS)
+    print("DEBUG: Fuel: " .. fuel .. ", Cost: " .. cost)
+    
+    if fuel < cost then
+        print("DEBUG: Not enough fuel for scan")
+        return {}
+    end
+    
+    print("DEBUG: Scanning with radius " .. SCAN_RADIUS .. "...")
+    
+    -- Use the correct API - scan with radius parameter
+    local all_blocks, error_msg = geoscanner.scan(SCAN_RADIUS)
     
     if not all_blocks then
-        print("DEBUG: geoscanner.scan() returned nil")
+        print("DEBUG: geoscanner.scan() failed: " .. (error_msg or "unknown error"))
         return {}
     end
     
@@ -412,20 +440,27 @@ local function scanForOres(ore_blocks)
     -- Filter for the ores we want
     for i, block_data in ipairs(all_blocks) do
         if block_data and block_data.name and ore_lookup[block_data.name] then
-            print("DEBUG: Found " .. block_data.name .. " at " .. block_data.x .. ", " .. block_data.y .. ", " .. block_data.z)
+            print("DEBUG: Found " .. block_data.name)
+            print("DEBUG: Raw coordinates: x=" .. tostring(block_data.x) .. ", y=" .. tostring(block_data.y) .. ", z=" .. tostring(block_data.z))
             
-            local distance = calculateDistance(
-                player_pos.x, player_pos.y, player_pos.z,
-                block_data.x, block_data.y, block_data.z
-            )
-            
-            table.insert(results, {
-                x = block_data.x,
-                y = block_data.y, 
-                z = block_data.z,
-                distance = distance,
-                block_name = block_data.name
-            })
+            -- Check if coordinates are valid
+            if block_data.x and block_data.y and block_data.z then
+                local distance = calculateDistance(
+                    player_pos.x, player_pos.y, player_pos.z,
+                    block_data.x, block_data.y, block_data.z
+                )
+                
+                table.insert(results, {
+                    x = block_data.x,
+                    y = block_data.y, 
+                    z = block_data.z,
+                    distance = distance,
+                    block_name = block_data.name,
+                    tags = block_data.tags -- Also include block tags from API
+                })
+            else
+                print("DEBUG: Skipping block with invalid coordinates")
+            end
         end
     end
     
@@ -442,10 +477,28 @@ local function drawMainMenu()
     clearScreen()
     drawHeader()
     
+    -- Show geo scanner status
+    local fuel = geoscanner.getFuelLevel() or 0
+    local max_fuel = geoscanner.getMaxFuelLevel() or 0
+    local cooldown = geoscanner.getScanCooldown() or 0
+    
     term.setCursorPos(1, 4)
+    if cooldown > 0 then
+        term.setTextColor(colors.red)
+        term.write("Scanner Status: Cooldown (" .. cooldown .. " ticks)")
+    elseif fuel < 1000 then
+        term.setTextColor(colors.orange)
+        term.write("Scanner Status: Low fuel (" .. fuel .. "/" .. max_fuel .. ")")
+    else
+        term.setTextColor(colors.green)
+        term.write("Scanner Status: Ready (" .. fuel .. "/" .. max_fuel .. " fuel)")
+    end
+    term.setTextColor(colors.white)
+    
+    term.setCursorPos(1, 6)
     term.write("Select ore category:")
     
-    local y = 6
+    local y = 8
     local index = 1
     for key, category in pairs(ORE_CATEGORIES) do
         term.setCursorPos(3, y)
@@ -458,6 +511,8 @@ local function drawMainMenu()
     
     term.setCursorPos(1, y + 1)
     term.write("Enter number (1-" .. (#ORE_CATEGORIES) .. ") or 'q' to quit:")
+    term.setCursorPos(1, y + 3)
+    term.write("Scan radius: " .. SCAN_RADIUS .. " blocks")
 end
 
 local function drawOreMenu()
@@ -488,59 +543,95 @@ local function drawScanResults()
     clearScreen()
     drawHeader()
     
+    -- Show fuel and cooldown status
+    local fuel = geoscanner.getFuelLevel() or 0
+    local max_fuel = geoscanner.getMaxFuelLevel() or 0
+    local cooldown = geoscanner.getScanCooldown() or 0
+    local cost = geoscanner.cost(SCAN_RADIUS) or 0
+    
     term.setCursorPos(1, 4)
     term.setTextColor(selected_category.color)
-    term.write("Scanning: " .. selected_ore.name)
+    term.write("Scanning: " .. selected_ore.name .. " (radius: " .. SCAN_RADIUS .. ")")
     term.setTextColor(colors.white)
     
-    -- Debug info
     term.setCursorPos(1, 5)
-    term.write("DEBUG: Player at " .. player_pos.x .. ", " .. player_pos.y .. ", " .. player_pos.z)
+    if cooldown > 0 then
+        term.setTextColor(colors.red)
+        term.write("Cooldown: " .. cooldown .. " ticks")
+        term.setTextColor(colors.white)
+    elseif fuel < cost then
+        term.setTextColor(colors.orange)
+        term.write("Low fuel: " .. fuel .. "/" .. max_fuel .. " (need " .. cost .. ")")
+        term.setTextColor(colors.white)
+    else
+        term.setTextColor(colors.green)
+        term.write("Fuel: " .. fuel .. "/" .. max_fuel)
+        term.setTextColor(colors.white)
+    end
     
     if #last_scan_results == 0 then
         term.setCursorPos(1, 7)
-        term.write("No " .. selected_ore.name .. " found nearby")
+        term.write("No " .. selected_ore.name .. " found within " .. SCAN_RADIUS .. " blocks")
         term.setCursorPos(1, 9)
         term.write("Try moving to a different area")
+        if cooldown > 0 then
+            term.setCursorPos(1, 10)
+            term.write("or wait for scanner cooldown")
+        elseif fuel < cost then
+            term.setCursorPos(1, 10)
+            term.write("or charge the geo scanner")
+        end
     else
         local closest = last_scan_results[1]
         
-        -- Debug raw coordinates
-        term.setCursorPos(1, 7)
-        term.write("DEBUG: Ore at " .. closest.x .. ", " .. closest.y .. ", " .. closest.z)
+        -- Safe calculation of dx, dz
+        local dx = 0
+        local dz = 0
         
-        local dx = closest.x - player_pos.x
-        local dz = closest.z - player_pos.z
-        
-        term.setCursorPos(1, 8)
-        term.write("DEBUG: dx=" .. dx .. ", dz=" .. dz)
+        if closest.x and player_pos.x then
+            dx = closest.x - player_pos.x
+        end
+        if closest.z and player_pos.z then
+            dz = closest.z - player_pos.z
+        end
         
         local direction = calculateDirection(dx, dz)
         
         -- Show ore info
-        term.setCursorPos(1, 10)
+        term.setCursorPos(1, 7)
         term.write("Found " .. #last_scan_results .. " deposit(s)")
         
-        term.setCursorPos(1, 12)
+        term.setCursorPos(1, 9)
         term.write("CLOSEST:")
         
         -- Show direction with bigger, clearer arrow
-        term.setCursorPos(1, 14)
+        term.setCursorPos(1, 11)
         term.write("Direction: " .. direction.name)
         
-        term.setCursorPos(1, 15)
+        term.setCursorPos(1, 12)
         term.setTextColor(colors.lime)
         term.write("Arrow: " .. direction.arrow .. " " .. direction.arrow .. " " .. direction.arrow)
         term.setTextColor(colors.white)
         
-        term.setCursorPos(1, 17)
-        term.write("Distance: " .. math.floor(closest.distance) .. " blocks")
+        term.setCursorPos(1, 14)
+        term.write("Distance: " .. math.floor(closest.distance or 0) .. " blocks")
         
-        term.setCursorPos(1, 18)
-        term.write("Y-Level: " .. closest.y)
+        term.setCursorPos(1, 15)
+        term.write("Y-Level: " .. tostring(closest.y or "unknown"))
         
-        term.setCursorPos(1, 19)
-        term.write("Block: " .. closest.block_name)
+        term.setCursorPos(1, 16)
+        term.write("Block: " .. tostring(closest.block_name or "unknown"))
+        
+        -- Show other results if available
+        if #last_scan_results > 1 then
+            term.setCursorPos(1, 18)
+            term.write("Other deposits:")
+            for i = 2, math.min(3, #last_scan_results) do
+                local ore = last_scan_results[i]
+                term.setCursorPos(3, 17 + i)
+                term.write(math.floor(ore.distance or 0) .. " blocks (Y=" .. tostring(ore.y or "?") .. ")")
+            end
+        end
     end
     
     local w, h = term.getSize()
