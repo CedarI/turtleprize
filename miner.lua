@@ -646,6 +646,10 @@ end
 
 -- Enhanced initialization with strategy selection and dimension detection
 local function init(args)
+  -- Ensure args exists and is a table
+  if not args then args = {} end
+  if type(args) ~= "table" then args = {} end
+  
   local surface_override = nil
   local dimension = "overworld" -- Default dimension
   
@@ -1592,6 +1596,10 @@ function listenForCommands()
 end
 
 function runMining(args)
+  -- Ensure args exists and is a table
+  if not args then args = {} end
+  if type(args) ~= "table" then args = {} end
+  
   local is_autostart = false
   local state_loaded = false
   
@@ -1796,6 +1804,16 @@ function runMining(args)
 end
 
 function main(args)
+  -- Ensure args exists and is a table
+  if not args then args = {} end
+  if type(args) ~= "table" then args = {} end
+  
+  -- Debug: Print args info (remove this line later if needed)
+  print("Debug: args type=" .. type(args) .. ", length=" .. #args)
+  if #args > 0 then
+    print("Debug: First arg = " .. tostring(args[1]))
+  end
+  
   -- Special commands
   if args[1] == "reset" then
     if fs.exists(STATE_FILE) then
@@ -1947,5 +1965,15 @@ function main(args)
   parallel.waitForAny(returnHomeAndCleanup, listenForCommands)
 end
 
+-- Safely collect command line arguments and start the program
 local args = {...}
+if not args then args = {} end
+
+-- Safety check for turtle environment
+if not turtle then
+  print("ERROR: This program requires a turtle!")
+  print("Please run this on a ComputerCraft turtle.")
+  return
+end
+
 main(args)
