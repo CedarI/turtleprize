@@ -338,19 +338,72 @@ local function preFlightCheck(allow_autostart)
     table.insert(issues, "CRITICAL: No bucket found! Bucket is required for lava refueling.")
   end
   
-  -- If autostarting, be more strict about equipment
+  -- If autostarting, determine what type of restart this is
   if allow_autostart then
-    if inventory_empty then
-      table.insert(issues, "AUTOSTART BLOCKED: Inventory is empty. Turtle needs proper equipment.")
-    end
+    -- Check if this is a resume after fuel operations (turtle is at base with good fuel)
+    local is_fuel_resume = (state.x == 0 and state.y == 0 and state.z == 0 and 
+                           type(fuel_level) == "number" and fuel_level >= 500)
     
-    if not has_fuel then
-      table.insert(issues, "AUTOSTART BLOCKED: No fuel found in inventory.")
-    end
+    -- Check if this is crash recovery (turtle not at base OR low fuel but has essential equipment)
+    local is_crash_recovery = (state.x ~= 0 or state.y ~= 0 or state.z ~= 0) or
+                             (type(fuel_level) == "number" and fuel_level < 500 and has_bucket)
     
-    -- More strict fuel level check for autostart
-    if type(fuel_level) == "number" and fuel_level < 1000 then
-      table.insert(issues, "AUTOSTART BLOCKED: Fuel too low (" .. fuel_level .. "). Need 1000+ for autostart.")
+    if is_fuel_resume then
+      print("Detected resume after fuel operations - using relaxed checks")
+      
+      -- More lenient checks for fuel resume
+      if not has_bucket then
+        table.insert(issues, "FUEL RESUME: Still need bucket for operations.")
+      end
+      
+      if type(fuel_level) == "number" and fuel_level < 500 then
+        table.insert(issues, "FUEL RESUME: Fuel still too low (" .. fuel_level .. "). Need 500+ to resume.")
+      end
+      
+      -- Don't require fuel in inventory or full inventory for fuel resume
+      if inventory_empty then
+        print("Note: Inventory empty after fuel resume - this is normal")
+      end
+      
+    elseif is_crash_recovery then
+      print("Detected crash recovery scenario - using emergency restart checks")
+      print("Position: (" .. state.x .. ", " .. state.y .. ", " .. state.z .. ")")
+      print("Fuel level: " .. fuel_level)
+      
+      -- Emergency checks - only require bucket and some fuel
+      if not has_bucket then
+        table.insert(issues, "CRASH RECOVERY: Need bucket for emergency operations.")
+      end
+      
+      if type(fuel_level) == "number" and fuel_level < 50 then
+        table.insert(issues, "CRASH RECOVERY: Fuel critically low (" .. fuel_level .. "). Need at least 50 to attempt base return.")
+      else
+        print("Emergency restart approved - turtle will attempt to return to base for fuel")
+      end
+      
+      -- Don't require full inventory or high fuel for crash recovery
+      if inventory_empty then
+        print("Note: Empty inventory in crash recovery - turtle will manage")
+      end
+      
+      if not has_fuel then
+        print("Note: No fuel in inventory - turtle will try to find fuel at base")
+      end
+      
+    else
+      -- Original strict checks for fresh autostart (good fuel + at base)
+      if inventory_empty then
+        table.insert(issues, "AUTOSTART BLOCKED: Inventory is empty. Turtle needs proper equipment.")
+      end
+      
+      if not has_fuel then
+        table.insert(issues, "AUTOSTART BLOCKED: No fuel found in inventory.")
+      end
+      
+      -- More strict fuel level check for autostart
+      if type(fuel_level) == "number" and fuel_level < 1000 then
+        table.insert(issues, "AUTOSTART BLOCKED: Fuel too low (" .. fuel_level .. "). Need 1000+ for autostart.")
+      end
     end
   else
     -- Manual start - more lenient checks
@@ -394,11 +447,18 @@ local function preFlightCheck(allow_autostart)
     
     if allow_autostart then
       print("\nAUTOSTART PREVENTED!")
-      print("This prevents accidental startup when turtle is improperly equipped.")
-      print("To fix:")
-      print("1. Add a bucket (empty or lava bucket)")
-      print("2. Add fuel (coal, charcoal, coal blocks, etc.)")
-      print("3. Ensure fuel level is 1000+")
+      if is_crash_recovery then
+        print("Crash recovery failed - turtle needs minimum equipment to attempt rescue.")
+        print("Required for crash recovery:")
+        print("1. Bucket (for fuel operations)")
+        print("2. At least 50 fuel (to attempt base return)")
+      else
+        print("This prevents accidental startup when turtle is improperly equipped.")
+        print("To fix:")
+        print("1. Add a bucket (empty or lava bucket)")
+        print("2. Add fuel (coal, charcoal, coal blocks, etc.)")
+        print("3. Ensure fuel level is 1000+")
+      end
       print("\nThen restart the program.")
       return false
     end
