@@ -1,12 +1,12 @@
 ---------------------------------------------------------------------
 -- ATM10 ORE FINDER - Advanced Pocket Computer Geo Scanner App
--- v1.8-live - By CedarI, cleanup by Gemini
+-- v1.9-trackingfix - By CedarI, cleanup by Gemini
 ---------------------------------------------------------------------
 
 -- CONFIGURATION
-local SCAN_RADIUS = 16       -- Scan radius for geo scanner
-local TRACKING_UPDATE_RATE = 0.5 -- Seconds between tracking updates
-local VERSION = "1.8-live"
+local SCAN_RADIUS = 16
+local TRACKING_UPDATE_RATE = 0.5
+local VERSION = "1.9-trackingfix"
 
 ---------------------------------------------------------------------
 -- INITIALIZE GEO SCANNER & GPS
@@ -102,7 +102,6 @@ local function updatePlayerPosition()
         local x, y, z = gps.locate()
         if x then state.player_pos = {x=x, y=y, z=z}; return end
     end
-    -- If no GPS, position remains relative (0,0,0)
     state.player_pos = {x=0, y=0, z=0}
 end
 
@@ -146,13 +145,11 @@ end
 
 local function updateTrackingScreen(dist, dir_x, dir_z)
     local w, h = term.getSize()
-    -- Clear previous drawing area
     for y = 4, h - 2 do term.setCursorPos(1, y); term.write(string.rep(" ", w)) end
 
     term.setCursorPos(1, 4); term.write("Tracking: " .. state.target_ore.block_name)
     term.setCursorPos(1, 6); term.write("Distance: " .. string.format("%.1f", dist) .. "m")
 
-    -- Large graphical arrow
     local arrow_y = math.floor(h/2) - 1
     local arrow_x = math.floor(w/2)
     term.setCursorPos(arrow_x, arrow_y)
@@ -161,11 +158,9 @@ local function updateTrackingScreen(dist, dir_x, dir_z)
         term.setTextColor(colors.lime)
         term.setCursorPos(arrow_x - 4, arrow_y); term.write("[ HERE ]")
     elseif math.abs(dir_z) > math.abs(dir_x) then
-        if dir_z < 0 then term.write("↑") -- North
-        else term.write("↓") end -- South
+        term.write(dir_z < 0 and "↑" or "↓")
     else
-        if dir_x < 0 then term.setCursorPos(arrow_x - 1, arrow_y); term.write("←") -- West
-        else term.setCursorPos(arrow_x - 1, arrow_y); term.write("→") end -- East
+        term.write(dir_x < 0 and "←" or "→")
     end
     term.setTextColor(colors.white)
 end
@@ -182,7 +177,6 @@ local function performScan()
         local ore_lookup = {}; for _, name in ipairs(state.selected_ore.blocks) do ore_lookup[name] = true end
         for _, block in ipairs(all_blocks) do
             if block and block.name and ore_lookup[block.name] then
-                -- Calculate absolute position if GPS is available
                 local abs_x = has_gps and state.player_pos.x + block.x or nil
                 local abs_y = has_gps and state.player_pos.y + block.y or nil
                 local abs_z = has_gps and state.player_pos.z + block.z or nil
@@ -195,38 +189,48 @@ local function performScan()
     drawScanResults()
 end
 
+local function calculateInitialTracking()
+    updatePlayerPosition()
+    local target = state.target_ore
+    local dist, dir_x, dir_z
+    if has_gps and target.abs_pos.x then
+        dir_x = target.abs_pos.x - state.player_pos.x
+        dir_z = target.abs_pos.z - state.player_pos.z
+        dist = math.sqrt(dir_x^2 + (target.abs_pos.y - state.player_pos.y)^2 + dir_z^2)
+    else
+        dist, dir_x, dir_z = target.distance, target.x, target.z
+    end
+    updateTrackingScreen(dist, dir_x, dir_z)
+end
+
 local function mainLoop()
     while true do
         local event, key = os.pullEvent("char")
-        if key == "q" then break end
+        if key == "q" then state.current_menu = "quit"; break end
 
         if state.current_menu == "main" then
             local choice = tonumber(key)
             if choice and choice >= 1 and choice <= #ORE_CATEGORIES then
                 state.selected_category = ORE_CATEGORIES[choice]
-                state.current_menu = "ore_select"
-                drawOreMenu()
+                state.current_menu = "ore_select"; drawOreMenu()
             end
         elseif state.current_menu == "ore_select" then
             if key == "b" then state.current_menu = "main"; drawMainMenu(); goto continue end
             local choice = tonumber(key)
             if choice and choice >= 1 and choice <= #state.selected_category.ores then
                 state.selected_ore = state.selected_category.ores[choice]
-                state.current_menu = "scanning"
-                performScan()
+                state.current_menu = "scanning"; performScan()
             end
         elseif state.current_menu == "scanning" then
             if key == "b" then state.current_menu = "ore_select"; drawOreMenu()
             elseif key == "r" then performScan()
             elseif key == "t" and #state.last_scan_results > 0 then
                 state.target_ore = state.last_scan_results[1]
-                if not has_gps then
-                    print("Warning: Tracking without GPS is highly inaccurate.")
-                    os.sleep(2)
-                end
                 state.current_menu = "tracking"
                 drawHeader("Live Tracking Mode")
                 local _, h = term.getSize(); term.setCursorPos(1, h); term.write("Press 'b' or 'q' to stop tracking.")
+                calculateInitialTracking()
+                break -- Exit mainLoop to enter trackingLoop
             end
         end
         ::continue::
@@ -238,28 +242,9 @@ local function trackingLoop()
     while state.current_menu == "tracking" do
         local event, p1 = os.pullEvent()
         if (event == "char" and (p1 == "b" or p1 == "q")) or (event == "key" and (p1 == keys.b or p1 == keys.q)) then
-            state.current_menu = "scanning"
-            drawScanResults()
-            break
+            state.current_menu = "scanning"; drawScanResults(); break
         elseif event == "timer" and p1 == timer then
-            updatePlayerPosition()
-            local target_pos = state.target_ore.abs_pos
-            local dir_x, dir_z, dist
-            if has_gps and target_pos.x then
-                dir_x = target_pos.x - state.player_pos.x
-                dir_z = target_pos.z - state.player_pos.z
-                dist = math.sqrt(dir_x^2 + (target_pos.y - state.player_pos.y)^2 + dir_z^2)
-            else
-                -- Less accurate non-GPS method (re-scans to find relative pos)
-                performScan() -- This is expensive
-                if #state.last_scan_results > 0 then
-                    local new_target_info = state.last_scan_results[1]
-                    dist, dir_x, dir_z = new_target_info.distance, new_target_info.x, new_target_info.z
-                else -- Target lost
-                    state.current_menu = "scanning"; drawScanResults(); break
-                end
-            end
-            updateTrackingScreen(dist, dir_x, dir_z)
+            calculateInitialTracking() -- This function works for updates too
             timer = os.startTimer(TRACKING_UPDATE_RATE)
         end
     end
@@ -272,9 +257,6 @@ while state.current_menu ~= "quit" do
         trackingLoop()
     else
         mainLoop()
-        if state.current_menu ~= "tracking" then -- mainLoop breaks on 'q'
-            state.current_menu = "quit"
-        end
     end
 end
 
