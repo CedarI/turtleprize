@@ -1,4 +1,169 @@
 ---------------------------------------------------------------------
+-- UI DRAWING FUNCTIONS (moved before scanning functions)
+---------------------------------------------------------------------
+
+local function drawMainMenu()
+    clearScreen()
+    drawHeader()
+    
+    -- Show geo scanner status (simplified)
+    local fuel = safeFuelLevel()
+    local max_fuel = safeMaxFuelLevel()
+    
+    term.setCursorPos(1, 4)
+    if fuel < 1000 and fuel < 999999 then
+        term.setTextColor(colors.orange)
+        term.write("Scanner Status: Low fuel (" .. fuel .. "/" .. max_fuel .. ")")
+    else
+        term.setTextColor(colors.green)
+        if fuel < 999999 then
+            term.write("Scanner Status: Ready (" .. fuel .. "/" .. max_fuel .. " fuel)")
+        else
+            term.write("Scanner Status: Ready")
+        end
+    end
+    term.setTextColor(colors.white)
+    
+    term.setCursorPos(1, 6)
+    term.write("Select ore category:")
+    
+    local y = 8
+    local index = 1
+    for key, category in pairs(ORE_CATEGORIES) do
+        term.setCursorPos(3, y)
+        term.setTextColor(category.color)
+        term.write(index .. ". " .. category.name)
+        term.setTextColor(colors.white)
+        y = y + 1
+        index = index + 1
+    end
+    
+    term.setCursorPos(1, y + 1)
+    term.write("Enter number (1-" .. (#ORE_CATEGORIES) .. ") or 'q' to quit:")
+    term.setCursorPos(1, y + 3)
+    term.write("Scan radius: " .. SCAN_RADIUS .. " blocks")
+end
+
+local function drawOreMenu()
+    if not selected_category then return end
+    
+    clearScreen()
+    drawHeader()
+    
+    term.setCursorPos(1, 4)
+    term.setTextColor(selected_category.color)
+    term.write(selected_category.name)
+    term.setTextColor(colors.white)
+    
+    local y = 6
+    for i, ore in ipairs(selected_category.ores) do
+        term.setCursorPos(3, y)
+        term.write(i .. ". " .. ore.name)
+        y = y + 1
+    end
+    
+    term.setCursorPos(1, y + 1)
+    term.write("Enter number, 'b' for back, or 'q' to quit:")
+end
+
+local function drawScanResults()
+    if not selected_ore or not last_scan_results then return end
+    
+    clearScreen()
+    drawHeader()
+    
+    -- Show fuel status (simplified)
+    local fuel = safeFuelLevel()
+    local max_fuel = safeMaxFuelLevel()
+    local cost = safeCost(SCAN_RADIUS)
+    
+    term.setCursorPos(1, 4)
+    term.setTextColor(selected_category.color)
+    term.write("Scanning: " .. selected_ore.name .. " (radius: " .. SCAN_RADIUS .. ")")
+    term.setTextColor(colors.white)
+    
+    term.setCursorPos(1, 5)
+    if fuel < cost and fuel < 999999 then
+        term.setTextColor(colors.orange)
+        term.write("Low fuel: " .. fuel .. "/" .. max_fuel .. " (need " .. cost .. ")")
+        term.setTextColor(colors.white)
+    else
+        if fuel < 999999 then
+            term.setTextColor(colors.green)
+            term.write("Fuel: " .. fuel .. "/" .. max_fuel)
+        else
+            term.setTextColor(colors.green)
+            term.write("Scanner ready")
+        end
+        term.setTextColor(colors.white)
+    end
+    
+    if #last_scan_results == 0 then
+        term.setCursorPos(1, 7)
+        term.write("No " .. selected_ore.name .. " found within " .. SCAN_RADIUS .. " blocks")
+        term.setCursorPos(1, 9)
+        term.write("Try moving to a different area")
+        if fuel < cost and fuel < 999999 then
+            term.setCursorPos(1, 10)
+            term.write("or charge the geo scanner")
+        end
+    else
+        local closest = last_scan_results[1]
+        
+        -- Calculate direction
+        local dx = 0
+        local dz = 0
+        
+        if closest.x and player_pos.x then
+            dx = closest.x - player_pos.x
+        end
+        if closest.z and player_pos.z then
+            dz = closest.z - player_pos.z
+        end
+        
+        local direction = calculateDirection(dx, dz)
+        
+        -- Show ore info
+        term.setCursorPos(1, 7)
+        term.write("Found " .. #last_scan_results .. " deposit(s)")
+        
+        term.setCursorPos(1, 9)
+        term.write("CLOSEST:")
+        
+        -- Show direction with clear arrow
+        term.setCursorPos(1, 11)
+        term.write("Direction: " .. direction.name)
+        
+        term.setCursorPos(1, 12)
+        term.setTextColor(colors.lime)
+        term.write("Arrow: " .. direction.arrow .. " " .. direction.arrow .. " " .. direction.arrow)
+        term.setTextColor(colors.white)
+        
+        term.setCursorPos(1, 14)
+        term.write("Distance: " .. math.floor(closest.distance or 0) .. " blocks")
+        
+        term.setCursorPos(1, 15)
+        term.write("Y-Level: " .. tostring(closest.y or "unknown"))
+        
+        term.setCursorPos(1, 16)
+        term.write("Block: " .. tostring(closest.block_name or "unknown"))
+        
+        -- Show other results if available
+        if #last_scan_results > 1 then
+            term.setCursorPos(1, 18)
+            term.write("Other deposits:")
+            for i = 2, math.min(3, #last_scan_results) do
+                local ore = last_scan_results[i]
+                term.setCursorPos(3, 17 + i)
+                term.write(math.floor(ore.distance or 0) .. " blocks (Y=" .. tostring(ore.y or "?") .. ")")
+            end
+        end
+    end
+    
+    local w, h = term.getSize()
+    term.setCursorPos(1, h - 1)
+    term.write("'r' to rescan, 'b' for back, 'q' to quit")
+end---------------------------------------------------------------------
 -- ATM10 ORE FINDER - Advanced Pocket Computer Geo Scanner App
 -- Requires: Advanced Pocket Computer + Geo Scanner from Advanced Peripherals
 ---------------------------------------------------------------------
@@ -316,6 +481,10 @@ local function calculateDirection(dx, dz)
 end
 
 ---------------------------------------------------------------------
+-- UI DRAWING FUNCTIONS (moved before scanning functions)
+---------------------------------------------------------------------
+
+---------------------------------------------------------------------
 -- SCANNING FUNCTIONS
 ---------------------------------------------------------------------
 
@@ -385,173 +554,6 @@ local function performScan()
     last_scan_results = results or {}
     
     drawScanResults()
-end
-
----------------------------------------------------------------------
--- UI DRAWING FUNCTIONS
----------------------------------------------------------------------
-
-local function drawMainMenu()
-    clearScreen()
-    drawHeader()
-    
-    -- Show geo scanner status (simplified)
-    local fuel = safeFuelLevel()
-    local max_fuel = safeMaxFuelLevel()
-    
-    term.setCursorPos(1, 4)
-    if fuel < 1000 and fuel < 999999 then
-        term.setTextColor(colors.orange)
-        term.write("Scanner Status: Low fuel (" .. fuel .. "/" .. max_fuel .. ")")
-    else
-        term.setTextColor(colors.green)
-        if fuel < 999999 then
-            term.write("Scanner Status: Ready (" .. fuel .. "/" .. max_fuel .. " fuel)")
-        else
-            term.write("Scanner Status: Ready")
-        end
-    end
-    term.setTextColor(colors.white)
-    
-    term.setCursorPos(1, 6)
-    term.write("Select ore category:")
-    
-    local y = 8
-    local index = 1
-    for key, category in pairs(ORE_CATEGORIES) do
-        term.setCursorPos(3, y)
-        term.setTextColor(category.color)
-        term.write(index .. ". " .. category.name)
-        term.setTextColor(colors.white)
-        y = y + 1
-        index = index + 1
-    end
-    
-    term.setCursorPos(1, y + 1)
-    term.write("Enter number (1-" .. (#ORE_CATEGORIES) .. ") or 'q' to quit:")
-    term.setCursorPos(1, y + 3)
-    term.write("Scan radius: " .. SCAN_RADIUS .. " blocks")
-end
-
-local function drawOreMenu()
-    if not selected_category then return end
-    
-    clearScreen()
-    drawHeader()
-    
-    term.setCursorPos(1, 4)
-    term.setTextColor(selected_category.color)
-    term.write(selected_category.name)
-    term.setTextColor(colors.white)
-    
-    local y = 6
-    for i, ore in ipairs(selected_category.ores) do
-        term.setCursorPos(3, y)
-        term.write(i .. ". " .. ore.name)
-        y = y + 1
-    end
-    
-    term.setCursorPos(1, y + 1)
-    term.write("Enter number, 'b' for back, or 'q' to quit:")
-end
-
-local function drawScanResults()
-    if not selected_ore or not last_scan_results then return end
-    
-    clearScreen()
-    drawHeader()
-    
-    -- Show fuel status (simplified)
-    local fuel = safeFuelLevel()
-    local max_fuel = safeMaxFuelLevel()
-    local cost = safeCost(SCAN_RADIUS)
-    
-    term.setCursorPos(1, 4)
-    term.setTextColor(selected_category.color)
-    term.write("Scanning: " .. selected_ore.name .. " (radius: " .. SCAN_RADIUS .. ")")
-    term.setTextColor(colors.white)
-    
-    term.setCursorPos(1, 5)
-    if fuel < cost and fuel < 999999 then
-        term.setTextColor(colors.orange)
-        term.write("Low fuel: " .. fuel .. "/" .. max_fuel .. " (need " .. cost .. ")")
-        term.setTextColor(colors.white)
-    else
-        if fuel < 999999 then
-            term.setTextColor(colors.green)
-            term.write("Fuel: " .. fuel .. "/" .. max_fuel)
-        else
-            term.setTextColor(colors.green)
-            term.write("Scanner ready")
-        end
-        term.setTextColor(colors.white)
-    end
-    
-    if #last_scan_results == 0 then
-        term.setCursorPos(1, 7)
-        term.write("No " .. selected_ore.name .. " found within " .. SCAN_RADIUS .. " blocks")
-        term.setCursorPos(1, 9)
-        term.write("Try moving to a different area")
-        if fuel < cost and fuel < 999999 then
-            term.setCursorPos(1, 10)
-            term.write("or charge the geo scanner")
-        end
-    else
-        local closest = last_scan_results[1]
-        
-        -- Calculate direction
-        local dx = 0
-        local dz = 0
-        
-        if closest.x and player_pos.x then
-            dx = closest.x - player_pos.x
-        end
-        if closest.z and player_pos.z then
-            dz = closest.z - player_pos.z
-        end
-        
-        local direction = calculateDirection(dx, dz)
-        
-        -- Show ore info
-        term.setCursorPos(1, 7)
-        term.write("Found " .. #last_scan_results .. " deposit(s)")
-        
-        term.setCursorPos(1, 9)
-        term.write("CLOSEST:")
-        
-        -- Show direction with clear arrow
-        term.setCursorPos(1, 11)
-        term.write("Direction: " .. direction.name)
-        
-        term.setCursorPos(1, 12)
-        term.setTextColor(colors.lime)
-        term.write("Arrow: " .. direction.arrow .. " " .. direction.arrow .. " " .. direction.arrow)
-        term.setTextColor(colors.white)
-        
-        term.setCursorPos(1, 14)
-        term.write("Distance: " .. math.floor(closest.distance or 0) .. " blocks")
-        
-        term.setCursorPos(1, 15)
-        term.write("Y-Level: " .. tostring(closest.y or "unknown"))
-        
-        term.setCursorPos(1, 16)
-        term.write("Block: " .. tostring(closest.block_name or "unknown"))
-        
-        -- Show other results if available
-        if #last_scan_results > 1 then
-            term.setCursorPos(1, 18)
-            term.write("Other deposits:")
-            for i = 2, math.min(3, #last_scan_results) do
-                local ore = last_scan_results[i]
-                term.setCursorPos(3, 17 + i)
-                term.write(math.floor(ore.distance or 0) .. " blocks (Y=" .. tostring(ore.y or "?") .. ")")
-            end
-        end
-    end
-    
-    local w, h = term.getSize()
-    term.setCursorPos(1, h - 1)
-    term.write("'r' to rescan, 'b' for back, 'q' to quit")
 end
 
 ---------------------------------------------------------------------
