@@ -1,12 +1,12 @@
 ---------------------------------------------------------------------
 -- ATM10 ORE FINDER - Advanced Pocket Computer Geo Scanner App
--- v2.0-final - By CedarI, cleanup by Gemini
+-- v2.1-final - By CedarI, cleanup by Gemini
 ---------------------------------------------------------------------
 
 -- CONFIGURATION
 local SCAN_RADIUS = 16
-local TRACKING_UPDATE_RATE = 0.4 -- Faster updates for smoother tracking
-local VERSION = "2.0-final"
+local TRACKING_UPDATE_RATE = 0.5 -- Seconds between tracking updates
+local VERSION = "2.1-final"
 
 ---------------------------------------------------------------------
 -- INITIALIZE GEO SCANNER & GPS
@@ -132,20 +132,33 @@ local function updateTrackingScreen(dist, dir_x, dir_z, dir_y)
     for y = 4, h - 2 do term.setCursorPos(1, y); term.write(string.rep(" ", w)) end -- Clear area
 
     term.setCursorPos(1, 4); term.write("Tracking: " .. state.target_ore.block_name)
-    term.setCursorPos(1, 6); term.write("Distance: " .. string.format("%.1f", dist) .. "m  |  Y-Level: " .. string.format("%+.0f", dir_y))
+    term.setCursorPos(1, 6); term.write(string.format("Dist: %.1fm | X: %+.1f | Y: %+.1f | Z: %+.1f", dist, dir_x, dir_y, dir_z))
 
     local arrow_y = math.floor(h/2) - 1
-    local arrow_x = math.floor(w/2) - 2
+    local arrow_x = math.floor(w/2) - 3
 
     if dist < 2.5 then
         term.setTextColor(colors.lime)
-        term.setCursorPos(arrow_x, arrow_y); term.write(" [HERE] ")
-    elseif math.abs(dir_z) > math.abs(dir_x) then -- North/South is dominant
-        term.setCursorPos(arrow_x + 1, arrow_y - 1); term.write(dir_z < 0 and "  ^  " or "     ")
-        term.setCursorPos(arrow_x + 1, arrow_y + 0); term.write(dir_z < 0 and " / \\ " or " \\ / ")
-        term.setCursorPos(arrow_x + 1, arrow_y + 1); term.write(dir_z < 0 and "/___\\" or "  V  ")
-    else -- East/West is dominant
-        term.setCursorPos(arrow_x, arrow_y); term.write(dir_x < 0 and "<-- " or " -->")
+        term.setCursorPos(arrow_x, arrow_y + 1); term.write(" [HERE] ")
+    else
+        term.setTextColor(colors.yellow)
+        if math.abs(dir_z) > math.abs(dir_x) then -- North/South is dominant
+            if dir_z < 0 then -- North
+                term.setCursorPos(arrow_x+2, arrow_y+0); term.write(" ^ ")
+                term.setCursorPos(arrow_x+1, arrow_y+1); term.write("/_\\")
+            else -- South
+                term.setCursorPos(arrow_x+1, arrow_y+0); term.write("\\_/")
+                term.setCursorPos(arrow_x+2, arrow_y+1); term.write(" v ")
+            end
+        else -- East/West is dominant
+            if dir_x < 0 then -- West
+                term.setCursorPos(arrow_x, arrow_y+0); term.write(" <' ")
+                term.setCursorPos(arrow_x, arrow_y+1); term.write(" <. ")
+            else -- East
+                term.setCursorPos(arrow_x+2, arrow_y+0); term.write(" '> ")
+                term.setCursorPos(arrow_x+2, arrow_y+1); term.write(" .> ")
+            end
+        end
     end
     term.setTextColor(colors.white)
 end
@@ -213,7 +226,7 @@ end
 local function trackingLoop()
     drawHeader("Live Tracking Mode")
     local _, h = term.getSize(); term.setCursorPos(1, h); term.write("Press 'b' or 'q' to stop tracking.")
-    calculateTrackingData() -- Initial draw
+    calculateTrackingData()
     local timer = os.startTimer(TRACKING_UPDATE_RATE)
 
     while state.current_menu == "tracking" do
