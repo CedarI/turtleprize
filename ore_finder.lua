@@ -1,4 +1,4 @@
--- Safe wrapper functions for geo scanner API (handles missing functions)
+-- Safe wrapper functions for geo scanner API (simplified)
 local function safeFuelLevel()
     if geoscanner.getFuelLevel then
         return geoscanner.getFuelLevel()
@@ -11,13 +11,6 @@ local function safeMaxFuelLevel()
         return geoscanner.getMaxFuelLevel()
     end
     return 999999 -- Assume infinite fuel if function doesn't exist
-end
-
-local function safeScanCooldown()
-    if geoscanner.getScanCooldown then
-        return geoscanner.getScanCooldown()
-    end
-    return 0 -- Assume no cooldown if function doesn't exist
 end
 
 local function safeCost(radius)
@@ -88,8 +81,8 @@ end---------------------------------------------------------------------
 
 -- CONFIGURATION
 local SCAN_RADIUS = 16 -- Scan radius for geo scanner
-local REFRESH_RATE = 5 -- Seconds between automatic scans (account for cooldown)
-local VERSION = "1.4-correct-api"
+local REFRESH_RATE = 5 -- Seconds between automatic scans
+local VERSION = "1.5-clean"
 
 -- Check for geo scanner - simplified approach since we know it's on "back"
 local geo = nil
@@ -367,27 +360,24 @@ local function updatePlayerPosition()
     if gps and gps.locate then
         local x, y, z = gps.locate(1) -- 1 second timeout
         if x and y and z then
-            player_pos = {x = x, y = y, z = z}
+            -- GPS gives eye level, adjust to feet level
+            player_pos = {x = x, y = y - 1, z = z}
             has_gps = true
-            print("DEBUG: Using GPS position: " .. x .. ", " .. y .. ", " .. z)
         end
     end
     
-    -- If no GPS, use relative positioning from (0,0,0)
-    -- The geo scanner works with relative coordinates anyway
+    -- If no GPS, use relative positioning from (0,0,0) at feet level
     if not has_gps then
-        player_pos = {x = 0, y = 0, z = 0}
-        print("DEBUG: Using relative position: 0, 0, 0")
+        player_pos = {x = 0, y = -1, z = 0} -- Feet level relative positioning
     end
     
     return true -- Always return true since relative positioning always works
 end
 
--- DIRECTION CALCULATION (Fixed with nil checks)
+-- DIRECTION CALCULATION (Cleaned up)
 local function calculateDistance(x1, y1, z1, x2, y2, z2)
     -- Safety check for nil values
     if not x1 or not y1 or not z1 or not x2 or not y2 or not z2 then
-        print("DEBUG: calculateDistance got nil value(s): " .. tostring(x1) .. "," .. tostring(y1) .. "," .. tostring(z1) .. " to " .. tostring(x2) .. "," .. tostring(y2) .. "," .. tostring(z2))
         return 0
     end
     
@@ -397,7 +387,6 @@ end
 local function calculateDirection(dx, dz)
     -- Ensure we have valid numbers
     if not dx or not dz then 
-        print("DEBUG: calculateDirection got nil values: dx=" .. tostring(dx) .. ", dz=" .. tostring(dz))
         return {arrow = "?", name = "Unknown"} 
     end
     
@@ -420,41 +409,25 @@ local function calculateDirection(dx, dz)
     end
 end
 
--- SCANNING FUNCTIONS (Using safe API wrappers)
+-- SCANNING FUNCTIONS (Cleaned up)
 local function scanForOres(ore_blocks)
     -- Always update position
     updatePlayerPosition()
     
-    print("DEBUG: Player position: " .. tostring(player_pos.x) .. ", " .. tostring(player_pos.y) .. ", " .. tostring(player_pos.z))
-    
-    -- Check scan cooldown (if function exists)
-    local cooldown = safeScanCooldown()
-    if cooldown > 0 then
-        print("DEBUG: Scan on cooldown for " .. cooldown .. " ticks")
-        return {}
-    end
-    
     -- Check fuel level (if function exists)
     local fuel = safeFuelLevel()
     local cost = safeCost(SCAN_RADIUS)
-    print("DEBUG: Fuel: " .. fuel .. ", Cost: " .. cost)
     
     if fuel < cost and fuel < 999999 then -- Don't check fuel if we're using fallback values
-        print("DEBUG: Not enough fuel for scan")
         return {}
     end
-    
-    print("DEBUG: Scanning with radius " .. SCAN_RADIUS .. "...")
     
     -- Use the geo scanner scan function
     local all_blocks, error_msg = geoscanner.scan(SCAN_RADIUS)
     
     if not all_blocks then
-        print("DEBUG: geoscanner.scan() failed: " .. (error_msg or "unknown error"))
         return {}
     end
-    
-    print("DEBUG: Scanner returned " .. #all_blocks .. " total blocks")
     
     local results = {}
     
@@ -467,9 +440,6 @@ local function scanForOres(ore_blocks)
     -- Filter for the ores we want
     for i, block_data in ipairs(all_blocks) do
         if block_data and block_data.name and ore_lookup[block_data.name] then
-            print("DEBUG: Found " .. block_data.name)
-            print("DEBUG: Raw coordinates: x=" .. tostring(block_data.x) .. ", y=" .. tostring(block_data.y) .. ", z=" .. tostring(block_data.z))
-            
             -- Check if coordinates are valid
             if block_data.x and block_data.y and block_data.z then
                 local distance = calculateDistance(
@@ -483,18 +453,14 @@ local function scanForOres(ore_blocks)
                     z = block_data.z,
                     distance = distance,
                     block_name = block_data.name,
-                    tags = block_data.tags -- Also include block tags from API
+                    tags = block_data.tags
                 })
-            else
-                print("DEBUG: Skipping block with invalid coordinates")
             end
         end
     end
     
     -- Sort by distance
     table.sort(results, function(a, b) return a.distance < b.distance end)
-    
-    print("DEBUG: Found " .. #results .. " matching ore blocks")
     
     return results
 end
@@ -504,21 +470,21 @@ local function drawMainMenu()
     clearScreen()
     drawHeader()
     
-    -- Show geo scanner status
-    local fuel = geoscanner.getFuelLevel() or 0
-    local max_fuel = geoscanner.getMaxFuelLevel() or 0
-    local cooldown = geoscanner.getScanCooldown() or 0
+    -- Show geo scanner status (simplified)
+    local fuel = safeFuelLevel()
+    local max_fuel = safeMaxFuelLevel()
     
     term.setCursorPos(1, 4)
-    if cooldown > 0 then
-        term.setTextColor(colors.red)
-        term.write("Scanner Status: Cooldown (" .. cooldown .. " ticks)")
-    elseif fuel < 1000 then
+    if fuel < 1000 and fuel < 999999 then
         term.setTextColor(colors.orange)
         term.write("Scanner Status: Low fuel (" .. fuel .. "/" .. max_fuel .. ")")
     else
         term.setTextColor(colors.green)
-        term.write("Scanner Status: Ready (" .. fuel .. "/" .. max_fuel .. " fuel)")
+        if fuel < 999999 then
+            term.write("Scanner Status: Ready (" .. fuel .. "/" .. max_fuel .. " fuel)")
+        else
+            term.write("Scanner Status: Ready")
+        end
     end
     term.setTextColor(colors.white)
     
@@ -570,10 +536,9 @@ local function drawScanResults()
     clearScreen()
     drawHeader()
     
-    -- Show fuel and cooldown status (using safe functions)
+    -- Show fuel status (simplified)
     local fuel = safeFuelLevel()
     local max_fuel = safeMaxFuelLevel()
-    local cooldown = safeScanCooldown()
     local cost = safeCost(SCAN_RADIUS)
     
     term.setCursorPos(1, 4)
@@ -582,11 +547,7 @@ local function drawScanResults()
     term.setTextColor(colors.white)
     
     term.setCursorPos(1, 5)
-    if cooldown > 0 then
-        term.setTextColor(colors.red)
-        term.write("Cooldown: " .. cooldown .. " ticks")
-        term.setTextColor(colors.white)
-    elseif fuel < cost and fuel < 999999 then
+    if fuel < cost and fuel < 999999 then
         term.setTextColor(colors.orange)
         term.write("Low fuel: " .. fuel .. "/" .. max_fuel .. " (need " .. cost .. ")")
         term.setTextColor(colors.white)
@@ -606,17 +567,14 @@ local function drawScanResults()
         term.write("No " .. selected_ore.name .. " found within " .. SCAN_RADIUS .. " blocks")
         term.setCursorPos(1, 9)
         term.write("Try moving to a different area")
-        if cooldown > 0 then
-            term.setCursorPos(1, 10)
-            term.write("or wait for scanner cooldown")
-        elseif fuel < cost and fuel < 999999 then
+        if fuel < cost and fuel < 999999 then
             term.setCursorPos(1, 10)
             term.write("or charge the geo scanner")
         end
     else
         local closest = last_scan_results[1]
         
-        -- Safe calculation of dx, dz
+        -- Calculate direction
         local dx = 0
         local dz = 0
         
@@ -636,7 +594,7 @@ local function drawScanResults()
         term.setCursorPos(1, 9)
         term.write("CLOSEST:")
         
-        -- Show direction with bigger, clearer arrow
+        -- Show direction with clear arrow
         term.setCursorPos(1, 11)
         term.write("Direction: " .. direction.name)
         
