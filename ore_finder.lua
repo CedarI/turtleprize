@@ -1,4 +1,31 @@
--- DEBUG SCANNER
+-- Safe wrapper functions for geo scanner API (handles missing functions)
+local function safeFuelLevel()
+    if geoscanner.getFuelLevel then
+        return geoscanner.getFuelLevel()
+    end
+    return 999999 -- Assume infinite fuel if function doesn't exist
+end
+
+local function safeMaxFuelLevel()
+    if geoscanner.getMaxFuelLevel then
+        return geoscanner.getMaxFuelLevel()
+    end
+    return 999999 -- Assume infinite fuel if function doesn't exist
+end
+
+local function safeScanCooldown()
+    if geoscanner.getScanCooldown then
+        return geoscanner.getScanCooldown()
+    end
+    return 0 -- Assume no cooldown if function doesn't exist
+end
+
+local function safeCost(radius)
+    if geoscanner.cost then
+        return geoscanner.cost(radius)
+    end
+    return 0 -- Assume no cost if function doesn't exist
+end-- DEBUG SCANNER
 local function debugScanner()
     clearScreen()
     drawHeader()
@@ -393,33 +420,33 @@ local function calculateDirection(dx, dz)
     end
 end
 
--- SCANNING FUNCTIONS (Using correct geo scanner API from documentation)
+-- SCANNING FUNCTIONS (Using safe API wrappers)
 local function scanForOres(ore_blocks)
     -- Always update position
     updatePlayerPosition()
     
     print("DEBUG: Player position: " .. tostring(player_pos.x) .. ", " .. tostring(player_pos.y) .. ", " .. tostring(player_pos.z))
     
-    -- Check scan cooldown
-    local cooldown = geoscanner.getScanCooldown()
+    -- Check scan cooldown (if function exists)
+    local cooldown = safeScanCooldown()
     if cooldown > 0 then
         print("DEBUG: Scan on cooldown for " .. cooldown .. " ticks")
         return {}
     end
     
-    -- Check fuel level
-    local fuel = geoscanner.getFuelLevel()
-    local cost = geoscanner.cost(SCAN_RADIUS)
+    -- Check fuel level (if function exists)
+    local fuel = safeFuelLevel()
+    local cost = safeCost(SCAN_RADIUS)
     print("DEBUG: Fuel: " .. fuel .. ", Cost: " .. cost)
     
-    if fuel < cost then
+    if fuel < cost and fuel < 999999 then -- Don't check fuel if we're using fallback values
         print("DEBUG: Not enough fuel for scan")
         return {}
     end
     
     print("DEBUG: Scanning with radius " .. SCAN_RADIUS .. "...")
     
-    -- Use the correct API - scan with radius parameter
+    -- Use the geo scanner scan function
     local all_blocks, error_msg = geoscanner.scan(SCAN_RADIUS)
     
     if not all_blocks then
@@ -543,11 +570,11 @@ local function drawScanResults()
     clearScreen()
     drawHeader()
     
-    -- Show fuel and cooldown status
-    local fuel = geoscanner.getFuelLevel() or 0
-    local max_fuel = geoscanner.getMaxFuelLevel() or 0
-    local cooldown = geoscanner.getScanCooldown() or 0
-    local cost = geoscanner.cost(SCAN_RADIUS) or 0
+    -- Show fuel and cooldown status (using safe functions)
+    local fuel = safeFuelLevel()
+    local max_fuel = safeMaxFuelLevel()
+    local cooldown = safeScanCooldown()
+    local cost = safeCost(SCAN_RADIUS)
     
     term.setCursorPos(1, 4)
     term.setTextColor(selected_category.color)
@@ -559,13 +586,18 @@ local function drawScanResults()
         term.setTextColor(colors.red)
         term.write("Cooldown: " .. cooldown .. " ticks")
         term.setTextColor(colors.white)
-    elseif fuel < cost then
+    elseif fuel < cost and fuel < 999999 then
         term.setTextColor(colors.orange)
         term.write("Low fuel: " .. fuel .. "/" .. max_fuel .. " (need " .. cost .. ")")
         term.setTextColor(colors.white)
     else
-        term.setTextColor(colors.green)
-        term.write("Fuel: " .. fuel .. "/" .. max_fuel)
+        if fuel < 999999 then
+            term.setTextColor(colors.green)
+            term.write("Fuel: " .. fuel .. "/" .. max_fuel)
+        else
+            term.setTextColor(colors.green)
+            term.write("Scanner ready")
+        end
         term.setTextColor(colors.white)
     end
     
@@ -577,7 +609,7 @@ local function drawScanResults()
         if cooldown > 0 then
             term.setCursorPos(1, 10)
             term.write("or wait for scanner cooldown")
-        elseif fuel < cost then
+        elseif fuel < cost and fuel < 999999 then
             term.setCursorPos(1, 10)
             term.write("or charge the geo scanner")
         end
