@@ -1,80 +1,4 @@
--- Safe wrapper functions for geo scanner API (simplified)
-local function safeFuelLevel()
-    if geoscanner.getFuelLevel then
-        return geoscanner.getFuelLevel()
-    end
-    return 999999 -- Assume infinite fuel if function doesn't exist
-end
-
-local function safeMaxFuelLevel()
-    if geoscanner.getMaxFuelLevel then
-        return geoscanner.getMaxFuelLevel()
-    end
-    return 999999 -- Assume infinite fuel if function doesn't exist
-end
-
-local function safeCost(radius)
-    if geoscanner.cost then
-        return geoscanner.cost(radius)
-    end
-    return 0 -- Assume no cost if function doesn't exist
-end-- DEBUG SCANNER
-local function debugScanner()
-    clearScreen()
-    drawHeader()
-    
-    term.setCursorPos(1, 4)
-    term.write("DEBUG SCANNER")
-    term.setCursorPos(1, 5)
-    term.write("=============")
-    
-    term.setCursorPos(1, 7)
-    term.write("Enter block name to scan for:")
-    term.setCursorPos(1, 8)
-    term.write("Example: minecraft:copper_ore")
-    term.setCursorPos(1, 9)
-    term.write("> ")
-    
-    local block_name = read()
-    if not block_name or block_name == "" then
-        return
-    end
-    
-    term.setCursorPos(1, 11)
-    term.write("Scanning for " .. block_name .. " within " .. SCAN_RADIUS .. " blocks...")
-    
-    local blocks = geo.scan(SCAN_RADIUS, block_name)
-    
-    term.setCursorPos(1, 13)
-    if blocks then
-        term.write("Scanner returned: " .. #blocks .. " results")
-        
-        if #blocks > 0 then
-            term.setCursorPos(1, 15)
-            term.write("Found blocks:")
-            local y = 16
-            for i, block in ipairs(blocks) do
-                if y > 18 then -- Don't overflow screen
-                    term.setCursorPos(1, y)
-                    term.write("... and " .. (#blocks - i + 1) .. " more")
-                    break
-                end
-                term.setCursorPos(3, y)
-                term.write(i .. ". Position: " .. block.x .. ", " .. block.y .. ", " .. block.z)
-                y = y + 1
-            end
-        else
-            term.setCursorPos(1, 15)
-            term.write("No blocks found.")
-        end
-    else
-        term.write("Scanner returned: nil (error or not found)")
-    end
-    
-    term.setCursorPos(1, 20)
-    term.write("Press any key to continue...")
-    os.pullEvent("char")
-end---------------------------------------------------------------------
+---------------------------------------------------------------------
 -- ATM10 ORE FINDER - Advanced Pocket Computer Geo Scanner App
 -- Requires: Advanced Pocket Computer + Geo Scanner from Advanced Peripherals
 ---------------------------------------------------------------------
@@ -84,27 +8,28 @@ local SCAN_RADIUS = 16 -- Scan radius for geo scanner
 local REFRESH_RATE = 5 -- Seconds between automatic scans
 local VERSION = "1.5-clean"
 
--- Initialize geo scanner immediately (before any functions that might use it)
-local geoscanner = nil
-
+---------------------------------------------------------------------
+-- INITIALIZE GEO SCANNER FIRST (before any other code)
+---------------------------------------------------------------------
+print("ATM10 Ore Finder v" .. VERSION)
 print("Looking for geo scanner...")
 
--- Try wrapping the back peripheral directly
-geoscanner = peripheral.wrap("back")
+local geoscanner = peripheral.wrap("back")
 
 if geoscanner and geoscanner.scan then
     print("Geo scanner found on back and functional!")
 elseif geoscanner then
     print("Peripheral found on back but no scan function available")
-    print("Available methods:", table.concat(peripheral.getMethods("back"), ", "))
+    if peripheral.getMethods then
+        print("Available methods:", table.concat(peripheral.getMethods("back"), ", "))
+    end
     geoscanner = nil
 else
-    print("No peripheral found on back")
+    print("No peripheral found on back, trying other sides...")
     
-    -- Fallback: try other locations and names
-    local possible_sides = {"front", "left", "right", "top", "bottom"}
-    
-    for _, side in ipairs(possible_sides) do
+    -- Try other sides
+    local sides = {"front", "left", "right", "top", "bottom"}
+    for _, side in ipairs(sides) do
         local p_type = peripheral.getType(side)
         if p_type and (p_type == "geo_scanner" or p_type:find("geo")) then
             geoscanner = peripheral.wrap(side)
@@ -118,89 +43,43 @@ else
     end
 end
 
--- Final error handling
+-- Exit if no geo scanner found
 if not geoscanner then
-    print("ERROR: Could not initialize geo scanner!")
-    print("")
-    print("Debug information:")
-    print("Back peripheral type:", peripheral.getType("back") or "none")
-    if peripheral.getType("back") then
-        print("Back peripheral methods:", table.concat(peripheral.getMethods("back"), ", "))
-    end
-    print("")
-    print("All peripherals:")
-    local all_peripherals = peripheral.getNames()
-    for _, name in ipairs(all_peripherals) do
-        local p_type = peripheral.getType(name)
-        print("  " .. name .. " - " .. (p_type or "unknown"))
-    end
-    print("")
-    print("Manual test: Try running these commands:")
-    print("lua> geoscanner = peripheral.wrap('back')")
-    print("lua> print(geoscanner)")
-    print("lua> print(geoscanner.scan)")
-    return
-else
-    print("Geo scanner initialized successfully!")
-end
-
--- Check for geo scanner - simplified approach since we know it's on "back"
-local geo = nil
-
-print("Looking for geo scanner...")
-
--- Try wrapping the back peripheral directly
-geo = peripheral.wrap("back")
-
-if geo and geo.scan then
-    print("Geo scanner found on back and functional!")
-elseif geo then
-    print("Peripheral found on back but no scan function available")
-    print("Available methods:", table.concat(peripheral.getMethods("back"), ", "))
-    geo = nil
-else
-    print("No peripheral found on back")
-    
-    -- Fallback: try other locations and names
-    local possible_sides = {"front", "left", "right", "top", "bottom"}
-    
-    for _, side in ipairs(possible_sides) do
-        local p_type = peripheral.getType(side)
-        if p_type and (p_type == "geo_scanner" or p_type:find("geo")) then
-            geo = peripheral.wrap(side)
-            if geo and geo.scan then
-                print("Found geo scanner on " .. side)
-                break
-            else
-                geo = nil
-            end
-        end
-    end
-end
-
--- Final error handling
-if not geo then
-    print("ERROR: Could not initialize geo scanner!")
-    print("")
-    print("Debug information:")
-    print("Back peripheral type:", peripheral.getType("back") or "none")
-    if peripheral.getType("back") then
-        print("Back peripheral methods:", table.concat(peripheral.getMethods("back"), ", "))
-    end
-    print("")
-    print("All peripherals:")
-    local all_peripherals = peripheral.getNames()
-    for _, name in ipairs(all_peripherals) do
-        local p_type = peripheral.getType(name)
-        print("  " .. name .. " - " .. (p_type or "unknown"))
-    end
-    print("")
-    print("Manual test: Try running these commands:")
-    print("lua> geo = peripheral.wrap('back')")
-    print("lua> print(geo)")
-    print("lua> print(geo.scan)")
+    print("ERROR: Could not find geo scanner!")
+    print("Make sure you have:")
+    print("1. Advanced Pocket Computer")
+    print("2. Geo Scanner addon installed")
     return
 end
+
+print("Geo scanner ready!")
+
+---------------------------------------------------------------------
+-- JUNK ITEMS AND ORE DEFINITIONS
+---------------------------------------------------------------------
+
+-- JUNK ITEMS: Any item in this list will be dropped.
+local JUNK_ITEMS = {
+  -- Overworld junk
+  ["minecraft:stone"] = true, ["minecraft:cobblestone"] = true, ["minecraft:dirt"] = true,
+  ["minecraft:gravel"] = true, ["minecraft:sand"] = true, ["minecraft:andesite"] = true,
+  ["minecraft:diorite"] = true, ["minecraft:granite"] = true, ["minecraft:deepslate"] = true,
+  ["minecraft:cobbled_deepslate"] = true, ["minecraft:tuff"] = true, ["minecraft:calcite"] = true,
+  ["minecraft:flint"] = true,
+  
+  -- Nether junk (comprehensive list)
+  ["minecraft:netherrack"] = true, ["minecraft:soul_sand"] = true, ["minecraft:soul_soil"] = true,
+  ["minecraft:blackstone"] = true, ["minecraft:basalt"] = true, ["minecraft:smooth_basalt"] = true,
+  ["minecraft:polished_blackstone"] = true, ["minecraft:warped_nylium"] = true, ["minecraft:crimson_nylium"] = true,
+  ["minecraft:magma_block"] = true, ["minecraft:nether_bricks"] = true, ["minecraft:red_nether_bricks"] = true,
+  ["minecraft:warped_stem"] = true, ["minecraft:crimson_stem"] = true, ["minecraft:warped_hyphae"] = true,
+  ["minecraft:crimson_hyphae"] = true, ["minecraft:shroomlight"] = true, ["minecraft:nether_wart_block"] = true,
+  ["minecraft:warped_wart_block"] = true, ["minecraft:bone_block"] = true, ["minecraft:glowstone"] = true,
+  
+  -- Additional nether variations and modded equivalents
+  ["minecraft:polished_basalt"] = true, ["minecraft:chiseled_nether_bricks"] = true,
+  ["minecraft:cracked_nether_bricks"] = true, ["minecraft:nether_brick"] = true,
+}
 
 -- ATM10 VALUABLE ORES DATABASE (Updated with AllTheOres and mod variants)
 local ORE_CATEGORIES = {
@@ -327,7 +206,9 @@ local ORE_CATEGORIES = {
     }
 }
 
+---------------------------------------------------------------------
 -- GLOBAL STATE
+---------------------------------------------------------------------
 local current_menu = "main"
 local selected_category = nil
 local selected_ore = nil
@@ -335,7 +216,32 @@ local last_scan_results = {}
 local scan_timer = nil
 local player_pos = {x = 0, y = 0, z = 0}
 
+---------------------------------------------------------------------
 -- UTILITY FUNCTIONS
+---------------------------------------------------------------------
+
+-- Safe wrapper functions for geo scanner API
+local function safeFuelLevel()
+    if geoscanner.getFuelLevel then
+        return geoscanner.getFuelLevel()
+    end
+    return 999999 -- Assume infinite fuel if function doesn't exist
+end
+
+local function safeMaxFuelLevel()
+    if geoscanner.getMaxFuelLevel then
+        return geoscanner.getMaxFuelLevel()
+    end
+    return 999999 -- Assume infinite fuel if function doesn't exist
+end
+
+local function safeCost(radius)
+    if geoscanner.cost then
+        return geoscanner.cost(radius)
+    end
+    return 0 -- Assume no cost if function doesn't exist
+end
+
 local function clearScreen()
     term.clear()
     term.setCursorPos(1, 1)
@@ -374,7 +280,7 @@ local function updatePlayerPosition()
     return true -- Always return true since relative positioning always works
 end
 
--- DIRECTION CALCULATION (Cleaned up)
+-- DIRECTION CALCULATION
 local function calculateDistance(x1, y1, z1, x2, y2, z2)
     -- Safety check for nil values
     if not x1 or not y1 or not z1 or not x2 or not y2 or not z2 then
@@ -409,7 +315,10 @@ local function calculateDirection(dx, dz)
     end
 end
 
--- SCANNING FUNCTIONS (Cleaned up)
+---------------------------------------------------------------------
+-- SCANNING FUNCTIONS
+---------------------------------------------------------------------
+
 local function scanForOres(ore_blocks)
     -- Always update position
     updatePlayerPosition()
@@ -465,7 +374,23 @@ local function scanForOres(ore_blocks)
     return results
 end
 
+-- SCANNING LOOP
+local function performScan()
+    if not selected_ore then return end
+    
+    term.setCursorPos(1, 3)
+    term.write("Scanning...")
+    
+    local results = scanForOres(selected_ore.blocks)
+    last_scan_results = results or {}
+    
+    drawScanResults()
+end
+
+---------------------------------------------------------------------
 -- UI DRAWING FUNCTIONS
+---------------------------------------------------------------------
+
 local function drawMainMenu()
     clearScreen()
     drawHeader()
@@ -629,20 +554,10 @@ local function drawScanResults()
     term.write("'r' to rescan, 'b' for back, 'q' to quit")
 end
 
--- SCANNING LOOP
-local function performScan()
-    if not selected_ore then return end
-    
-    term.setCursorPos(1, 3)
-    term.write("Scanning...")
-    
-    local results = scanForOres(selected_ore.blocks)
-    last_scan_results = results or {}
-    
-    drawScanResults()
-end
-
+---------------------------------------------------------------------
 -- INPUT HANDLING
+---------------------------------------------------------------------
+
 local function handleMainMenuInput()
     local event, key = os.pullEvent("char")
     
@@ -706,17 +621,43 @@ local function handleScanInput()
     return true
 end
 
+---------------------------------------------------------------------
 -- MAIN PROGRAM
+---------------------------------------------------------------------
+
 local function main()
-    print("ATM10 Ore Finder v" .. VERSION)
-    print("Initializing geo scanner...")
-    
-    if not updatePlayerPosition() then
-        print("Warning: Could not determine position. GPS or advanced features may be limited.")
-    else
-        print("Position: " .. player_pos.x .. ", " .. player_pos.y .. ", " .. player_pos.z)
+    -- Check if geo scanner was initialized successfully
+    if not geoscanner then
+        print("Cannot start - geo scanner initialization failed!")
+        return
     end
     
+    -- Check scanner status
+    local fuel = safeFuelLevel()
+    local max_fuel = safeMaxFuelLevel()
+    local cost = safeCost(SCAN_RADIUS)
+    
+    if fuel < 999999 then
+        if fuel < cost then
+            print("WARNING: Not enough fuel for scanning!")
+            print("Please charge your geo scanner before use.")
+        end
+    end
+    
+    -- Check GPS availability
+    updatePlayerPosition()
+    if gps and gps.locate then
+        local x, y, z = gps.locate(1)
+        if x and y and z then
+            print("GPS available - using absolute coordinates")
+        else
+            print("GPS not available - using relative positioning")
+        end
+    else
+        print("No GPS system - using relative positioning")
+    end
+    
+    print("Ready to scan!")
     sleep(1)
     
     current_menu = "main"
