@@ -643,15 +643,32 @@ local function init(args)
   local surface_override = nil
   local dimension = "overworld" -- Default dimension
   
-  if args[4] and tonumber(args[4]) then
-    surface_override = tonumber(args[4])
-  elseif args[4] and (args[4] == "nether" or args[4] == "overworld") then
-    dimension = args[4]
+  -- Parse arguments more carefully
+  print("DEBUG: Parsing arguments:")
+  print("  args[1] (width): " .. tostring(args[1]))
+  print("  args[2] (length): " .. tostring(args[2])) 
+  print("  args[3] (strategy): " .. tostring(args[3]))
+  print("  args[4]: " .. tostring(args[4]))
+  print("  args[5]: " .. tostring(args[5]))
+  
+  -- Check args[4] - could be surface_y OR dimension
+  if args[4] then
+    if tonumber(args[4]) then
+      surface_override = tonumber(args[4])
+      print("DEBUG: args[4] is surface override: " .. surface_override)
+    elseif args[4] == "nether" or args[4] == "overworld" then
+      dimension = args[4]
+      print("DEBUG: args[4] is dimension: " .. dimension)
+    end
   end
   
+  -- Check args[5] - should be dimension if args[4] was surface_y
   if args[5] and (args[5] == "nether" or args[5] == "overworld") then
     dimension = args[5]
+    print("DEBUG: args[5] is dimension: " .. dimension)
   end
+  
+  print("DEBUG: Final dimension setting: " .. dimension)
   
   -- Set appropriate branch levels based on dimension
   if dimension == "nether" then
@@ -668,12 +685,14 @@ local function init(args)
     x = 0, y = 0, z = 0, facing = 0, task = "STARTING",
     width = tonumber(args[1]) or 32, length = tonumber(args[2]) or 64,
     strategy = args[3] or MINING_STRATEGY,
-    dimension = dimension,
+    dimension = dimension,  -- This should definitely be set now
     progress = { x = 0, z = 0, level_index = 1 },
     surfaceY = surface_override,
     inventory = {},
     statistics = { blocks_mined = 0, ores_found = 0, distance_traveled = 0 }
   }
+  
+  print("DEBUG: state.dimension set to: " .. tostring(state.dimension))
   saveState()
 end
 
