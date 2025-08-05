@@ -66,7 +66,7 @@ if not geo then
     return
 end
 
--- ATM10 VALUABLE ORES DATABASE
+-- ATM10 VALUABLE ORES DATABASE (Updated with AllTheOres and mod variants)
 local ORE_CATEGORIES = {
     ["ATM Special"] = {
         name = "ATM Special Ores",
@@ -84,7 +84,10 @@ local ORE_CATEGORIES = {
             {name = "Diamond", blocks = {"minecraft:diamond_ore", "minecraft:deepslate_diamond_ore"}},
             {name = "Emerald", blocks = {"minecraft:emerald_ore", "minecraft:deepslate_emerald_ore"}},
             {name = "Ancient Debris", blocks = {"minecraft:ancient_debris"}},
-            {name = "Gold", blocks = {"minecraft:gold_ore", "minecraft:deepslate_gold_ore", "minecraft:nether_gold_ore"}},
+            {name = "Gold", blocks = {
+                "minecraft:gold_ore", "minecraft:deepslate_gold_ore", "minecraft:nether_gold_ore",
+                "alltheores:gold_ore", "alltheores:deepslate_gold_ore", "alltheores:nether_gold_ore"
+            }},
         }
     },
     ["Tech Ores"] = {
@@ -92,32 +95,76 @@ local ORE_CATEGORIES = {
         color = colors.cyan,
         ores = {
             {name = "Certus Quartz", blocks = {"ae2:certus_quartz_ore", "ae2:deepslate_certus_quartz_ore"}},
-            {name = "Osmium", blocks = {"mekanism:osmium_ore", "mekanism:deepslate_osmium_ore"}},
-            {name = "Uranium", blocks = {"mekanism:uranium_ore", "mekanism:deepslate_uranium_ore"}},
-            {name = "Fluorite", blocks = {"mekanism:fluorite_ore", "mekanism:deepslate_fluorite_ore"}},
-            {name = "Zinc", blocks = {"create:zinc_ore", "create:deepslate_zinc_ore", "alltheores:zinc_ore"}},
+            {name = "Osmium", blocks = {
+                "mekanism:osmium_ore", "mekanism:deepslate_osmium_ore",
+                "alltheores:osmium_ore", "alltheores:deepslate_osmium_ore"
+            }},
+            {name = "Uranium", blocks = {
+                "mekanism:uranium_ore", "mekanism:deepslate_uranium_ore",
+                "alltheores:uranium_ore", "alltheores:deepslate_uranium_ore"
+            }},
+            {name = "Fluorite", blocks = {
+                "mekanism:fluorite_ore", "mekanism:deepslate_fluorite_ore",
+                "alltheores:fluorite_ore", "alltheores:deepslate_fluorite_ore"
+            }},
+            {name = "Zinc", blocks = {
+                "create:zinc_ore", "create:deepslate_zinc_ore", 
+                "alltheores:zinc_ore", "alltheores:deepslate_zinc_ore"
+            }},
         }
     },
     ["Industrial"] = {
         name = "Industrial Ores",
         color = colors.orange,
         ores = {
-            {name = "Tin", blocks = {"thermal:tin_ore", "thermal:deepslate_tin_ore", "mekanism:tin_ore", "mekanism:deepslate_tin_ore", "alltheores:tin_ore"}},
-            {name = "Lead", blocks = {"thermal:lead_ore", "thermal:deepslate_lead_ore", "mekanism:lead_ore", "mekanism:deepslate_lead_ore", "alltheores:lead_ore"}},
-            {name = "Silver", blocks = {"thermal:silver_ore", "thermal:deepslate_silver_ore", "alltheores:silver_ore"}},
-            {name = "Nickel", blocks = {"thermal:nickel_ore", "thermal:deepslate_nickel_ore", "alltheores:nickel_ore"}},
-            {name = "Aluminum", blocks = {"alltheores:aluminum_ore"}},
+            {name = "Tin", blocks = {
+                "thermal:tin_ore", "thermal:deepslate_tin_ore", 
+                "mekanism:tin_ore", "mekanism:deepslate_tin_ore", 
+                "alltheores:tin_ore", "alltheores:deepslate_tin_ore"
+            }},
+            {name = "Lead", blocks = {
+                "thermal:lead_ore", "thermal:deepslate_lead_ore", 
+                "mekanism:lead_ore", "mekanism:deepslate_lead_ore", 
+                "alltheores:lead_ore", "alltheores:deepslate_lead_ore"
+            }},
+            {name = "Silver", blocks = {
+                "thermal:silver_ore", "thermal:deepslate_silver_ore", 
+                "alltheores:silver_ore", "alltheores:deepslate_silver_ore"
+            }},
+            {name = "Nickel", blocks = {
+                "thermal:nickel_ore", "thermal:deepslate_nickel_ore", 
+                "alltheores:nickel_ore", "alltheores:deepslate_nickel_ore"
+            }},
+            {name = "Aluminum", blocks = {
+                "alltheores:aluminum_ore", "alltheores:deepslate_aluminum_ore"
+            }},
         }
     },
     ["Common"] = {
         name = "Common Ores",
         color = colors.lightGray,
         ores = {
-            {name = "Iron", blocks = {"minecraft:iron_ore", "minecraft:deepslate_iron_ore"}},
-            {name = "Copper", blocks = {"minecraft:copper_ore", "minecraft:deepslate_copper_ore"}},
-            {name = "Coal", blocks = {"minecraft:coal_ore", "minecraft:deepslate_coal_ore"}},
-            {name = "Redstone", blocks = {"minecraft:redstone_ore", "minecraft:deepslate_redstone_ore"}},
-            {name = "Lapis", blocks = {"minecraft:lapis_ore", "minecraft:deepslate_lapis_ore"}},
+            {name = "Iron", blocks = {
+                "minecraft:iron_ore", "minecraft:deepslate_iron_ore",
+                "alltheores:iron_ore", "alltheores:deepslate_iron_ore"
+            }},
+            {name = "Copper", blocks = {
+                "minecraft:copper_ore", "minecraft:deepslate_copper_ore",
+                "alltheores:copper_ore", "alltheores:deepslate_copper_ore",
+                "thermal:copper_ore", "thermal:deepslate_copper_ore"
+            }},
+            {name = "Coal", blocks = {
+                "minecraft:coal_ore", "minecraft:deepslate_coal_ore",
+                "alltheores:coal_ore", "alltheores:deepslate_coal_ore"
+            }},
+            {name = "Redstone", blocks = {
+                "minecraft:redstone_ore", "minecraft:deepslate_redstone_ore",
+                "alltheores:redstone_ore", "alltheores:deepslate_redstone_ore"
+            }},
+            {name = "Lapis", blocks = {
+                "minecraft:lapis_ore", "minecraft:deepslate_lapis_ore",
+                "alltheores:lapis_ore", "alltheores:deepslate_lapis_ore"
+            }},
         }
     },
     ["Nether"] = {
@@ -125,9 +172,21 @@ local ORE_CATEGORIES = {
         color = colors.red,
         ores = {
             {name = "Ancient Debris", blocks = {"minecraft:ancient_debris"}},
-            {name = "Nether Quartz", blocks = {"minecraft:nether_quartz_ore"}},
-            {name = "Nether Gold", blocks = {"minecraft:nether_gold_ore"}},
+            {name = "Nether Quartz", blocks = {
+                "minecraft:nether_quartz_ore",
+                "alltheores:nether_quartz_ore"
+            }},
+            {name = "Nether Gold", blocks = {
+                "minecraft:nether_gold_ore",
+                "alltheores:nether_gold_ore"
+            }},
             {name = "Gilded Blackstone", blocks = {"minecraft:gilded_blackstone"}},
+            {name = "Nether Copper", blocks = {
+                "alltheores:nether_copper_ore", "thermal:nether_copper_ore"
+            }},
+            {name = "Nether Iron", blocks = {
+                "alltheores:nether_iron_ore", "thermal:nether_iron_ore"
+            }},
         }
     }
 }
@@ -301,6 +360,18 @@ local function drawScanResults()
         term.write("No " .. selected_ore.name .. " found within " .. SCAN_RADIUS .. " blocks")
         term.setCursorPos(1, 8)
         term.write("Try moving to a different area")
+        
+        -- Debug: Show what block names we searched for
+        term.setCursorPos(1, 10)
+        term.write("Searched for blocks:")
+        local y = 11
+        for _, block_name in ipairs(selected_ore.blocks) do
+            if y <= 18 then -- Don't overflow screen
+                term.setCursorPos(3, y)
+                term.write("- " .. block_name)
+                y = y + 1
+            end
+        end
     else
         local closest = last_scan_results[1]
         local dx = closest.x - player_pos.x
@@ -330,19 +401,23 @@ local function drawScanResults()
         term.setCursorPos(1, arrow_y + 4)
         term.write("Y-Level: " .. closest.y)
         
+        -- Show the actual block type found
+        term.setCursorPos(1, arrow_y + 5)
+        term.write("Block: " .. closest.block_name)
+        
         -- Show multiple results if available
         if #last_scan_results > 1 then
-            term.setCursorPos(1, arrow_y + 6)
+            term.setCursorPos(1, arrow_y + 7)
             term.write("Other deposits found:")
-            for i = 2, math.min(4, #last_scan_results) do
+            for i = 2, math.min(3, #last_scan_results) do
                 local ore = last_scan_results[i]
-                term.setCursorPos(3, arrow_y + 5 + i)
-                term.write(math.floor(ore.distance) .. " blocks away (Y=" .. ore.y .. ")")
+                term.setCursorPos(3, arrow_y + 6 + i)
+                term.write(math.floor(ore.distance) .. " blocks (" .. ore.block_name .. ")")
             end
             
-            if #last_scan_results > 4 then
+            if #last_scan_results > 3 then
                 term.setCursorPos(3, arrow_y + 10)
-                term.write("+" .. (#last_scan_results - 4) .. " more deposits")
+                term.write("+" .. (#last_scan_results - 3) .. " more deposits")
             end
         end
     end
