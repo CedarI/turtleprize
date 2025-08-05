@@ -474,51 +474,102 @@ local function loadState()
   return false
 end
 
--- NEW: Auto-detect dimension based on surrounding blocks
+-- NEW: Auto-detect dimension based on surrounding blocks AND environment
 local function detectDimension()
   local nether_blocks = 0
   local overworld_blocks = 0
+  local air_blocks = 0
+  local unknown_blocks = 0
+  
+  print("DEBUG: Detecting dimension...")
   
   -- Check blocks in multiple directions
   local check_directions = {
-    function() return turtle.inspect() end,
-    function() return turtle.inspectUp() end,
-    function() return turtle.inspectDown() end
+    {"front", function() return turtle.inspect() end},
+    {"up", function() return turtle.inspectUp() end},
+    {"down", function() return turtle.inspectDown() end}
   }
   
-  for _, check_func in ipairs(check_directions) do
+  for _, check_data in ipairs(check_directions) do
+    local direction, check_func = check_data[1], check_data[2]
     local success, data = check_func()
     if success and data and data.name then
+      print("DEBUG: " .. direction .. " = " .. data.name)
+      
+      -- Expanded nether block detection
+      if data.name == "minecraft:netherrack" or data.name == "minecraft:basalt" or 
+         data.name == "minecraft:blackstone" or data.name == "minecraft:soul_sand" or
+         data.name == "minecraft:soul_soil" or data.name == "minecraft:crimson_nylium" or
+         data.name == "minecraft:warped_nylium" or data.name == "minecraft:nether_bricks" or
+         data.name == "minecraft:red_nether_bricks" or data.name == "minecraft:bone_block" or
+         data.name == "minecraft:magma_block" or data.name:find("nether") then
+        nether_blocks = nether_blocks + 1
+        print("DEBUG: Found nether block!")
+      elseif data.name == "minecraft:stone" or data.name == "minecraft:deepslate" or
+             data.name == "minecraft:dirt" or data.name == "minecraft:andesite" or
+             data.name == "minecraft:diorite" or data.name == "minecraft:granite" or
+             data.name == "minecraft:grass_block" or data.name == "minecraft:cobblestone" then
+        overworld_blocks = overworld_blocks + 1
+        print("DEBUG: Found overworld block!")
+      else
+        unknown_blocks = unknown_blocks + 1
+        print("DEBUG: Unknown block: " .. data.name)
+      end
+    else
+      air_blocks = air_blocks + 1
+      print("DEBUG: " .. direction .. " = air/nothing")
+    end
+  end
+  
+  -- Turn around to check horizontal directions
+  local original_facing = turtle.getDirection and turtle.getDirection() or 0
+  for turn = 1, 4 do
+    turtle.turnRight()
+    local success, data = turtle.inspect()
+    if success and data and data.name then
+      print("DEBUG: side " .. turn .. " = " .. data.name)
+      
       if data.name == "minecraft:netherrack" or data.name == "minecraft:basalt" or 
          data.name == "minecraft:blackstone" or data.name == "minecraft:soul_sand" or
          data.name == "minecraft:soul_soil" or data.name:find("nether") then
         nether_blocks = nether_blocks + 1
       elseif data.name == "minecraft:stone" or data.name == "minecraft:deepslate" or
-             data.name == "minecraft:dirt" or data.name == "minecraft:andesite" or
-             data.name == "minecraft:diorite" or data.name == "minecraft:granite" then
+             data.name == "minecraft:dirt" or data.name == "minecraft:grass_block" then
         overworld_blocks = overworld_blocks + 1
+      else
+        unknown_blocks = unknown_blocks + 1
       end
+    else
+      air_blocks = air_blocks + 1
     end
   end
   
-  -- Turn around to check more directions
-  for turn = 1, 4 do
-    turtle.turnRight()
-    local success, data = turtle.inspect()
-    if success and data and data.name then
-      if data.name == "minecraft:netherrack" or data.name == "minecraft:basalt" or 
-         data.name == "minecraft:blackstone" or data.name:find("nether") then
-        nether_blocks = nether_blocks + 1
-      elseif data.name == "minecraft:stone" or data.name == "minecraft:deepslate" or
-             data.name == "minecraft:dirt" then
-        overworld_blocks = overworld_blocks + 1
-      end
-    end
-  end
+  -- Also check Y level as a hint
+  local y_level = turtle.getPosition and turtle.getPosition().y or state.y or 0
+  print("DEBUG: Current Y level: " .. y_level)
   
-  if nether_blocks > overworld_blocks then
+  print("DEBUG: Detection results:")
+  print("  Nether blocks: " .. nether_blocks)
+  print("  Overworld blocks: " .. overworld_blocks) 
+  print("  Unknown blocks: " .. unknown_blocks)
+  print("  Air blocks: " .. air_blocks)
+  
+  -- Enhanced detection logic
+  if nether_blocks > 0 then
+    print("DEBUG: Nether blocks found - assuming Nether")
     return "nether"
+  elseif overworld_blocks > 0 then
+    print("DEBUG: Overworld blocks found - assuming Overworld") 
+    return "overworld"
+  elseif y_level >= 0 and y_level <= 127 then
+    print("DEBUG: Y-level suggests Nether (0-127)")
+    return "nether"
+  elseif y_level < -64 or y_level > 200 then
+    print("DEBUG: Y-level suggests Overworld")
+    return "overworld"
   else
+    print("DEBUG: Cannot determine dimension - defaulting to Overworld")
+    print("Use 'miner dimension nether' to force Nether mode")
     return "overworld"
   end
 end
@@ -687,7 +738,100 @@ function pos_lib.goTo(tx, ty, tz, status_msg)
 end
 
 ---------------------------------------------------------------------
--- SECTION 4: ENHANCED MINING & UTILITY FUNCTIONS
+-- SECTION 4: SAFE NAVIGATION FUNCTIONS (moved up to fix call order)
+---------------------------------------------------------------------
+
+-- SAFE BASE APPROACH: Always approach base from underground to avoid destroying structures
+local function safeGoToBase(status_msg)
+  local msg = status_msg or "Returning to base safely"
+  comms.sendStatus(msg .. " (underground approach)")
+  
+  -- Step 1: Go down to safe underground level first (Y=-5 or lower)
+  local safe_underground_y = -5
+  
+  comms.sendStatus("Descending to safe underground level...")
+  while state.y > safe_underground_y and not recall_activated do
+    if not digAndDown() then 
+      state.task = "STUCK"
+      return false 
+    end
+    if state.statistics.distance_traveled % 10 == 0 then 
+      comms.sendStatus("Descending safely: Y=" .. state.y) 
+    end
+  end
+  
+  -- Step 2: Navigate to base underground (0, safe_y, 0)
+  comms.sendStatus("Navigating to base underground...")
+  
+  -- Z movement underground
+  if state.z > 0 then
+    if not pos_lib.turnTo(0) then state.task = "STUCK"; return false end
+    while state.z > 0 and not recall_activated do
+      if not digAndMoveForward() then state.task = "STUCK"; return false end
+      if state.statistics.distance_traveled % 10 == 0 then comms.sendStatus("Underground navigation: Z=" .. state.z) end
+    end
+  elseif state.z < 0 then
+    if not pos_lib.turnTo(2) then state.task = "STUCK"; return false end
+    while state.z < 0 and not recall_activated do
+      if not digAndMoveForward() then state.task = "STUCK"; return false end
+      if state.statistics.distance_traveled % 10 == 0 then comms.sendStatus("Underground navigation: Z=" .. state.z) end
+    end
+  end
+  
+  -- X movement underground
+  if state.x < 0 then
+    if not pos_lib.turnTo(1) then state.task = "STUCK"; return false end
+    while state.x < 0 and not recall_activated do
+      if not digAndMoveForward() then state.task = "STUCK"; return false end
+      if state.statistics.distance_traveled % 10 == 0 then comms.sendStatus("Underground navigation: X=" .. state.x) end
+    end
+  elseif state.x > 0 then
+    if not pos_lib.turnTo(3) then state.task = "STUCK"; return false end
+    while state.x > 0 and not recall_activated do
+      if not digAndMoveForward() then state.task = "STUCK"; return false end
+      if state.statistics.distance_traveled % 10 == 0 then comms.sendStatus("Underground navigation: X=" .. state.x) end
+    end
+  end
+  
+  -- Step 3: Now we're at (0, safe_y, 0) - safely ascend to surface
+  comms.sendStatus("Safely ascending to base surface...")
+  while state.y < 0 and not recall_activated do
+    if not digAndUp() then state.task = "STUCK"; return false end
+    if state.statistics.distance_traveled % 5 == 0 then 
+      comms.sendStatus("Ascending safely: Y=" .. state.y) 
+    end
+  end
+  
+  comms.sendStatus("Safely arrived at base!")
+  return not recall_activated
+end
+
+-- SAFE BASE DEPARTURE: Always leave base by going underground first
+local function safeLeaveBase(target_x, target_y, target_z, status_msg)
+  local msg = status_msg or "Leaving base safely"
+  comms.sendStatus(msg .. " (underground departure)")
+  
+  -- Step 1: Go down to safe underground level (Y=-5 or lower)
+  local safe_underground_y = -5
+  
+  comms.sendStatus("Descending from base to safe level...")
+  while state.y > safe_underground_y and not recall_activated do
+    if not digAndDown() then 
+      state.task = "STUCK"
+      return false 
+    end
+    if state.statistics.distance_traveled % 10 == 0 then 
+      comms.sendStatus("Safe descent: Y=" .. state.y) 
+    end
+  end
+  
+  -- Step 2: Use normal pathfinding once safely underground
+  comms.sendStatus("Navigating safely to destination...")
+  return pos_lib.goTo(target_x, target_y, target_z, status_msg)
+end
+
+---------------------------------------------------------------------
+-- SECTION 5: ENHANCED MINING & UTILITY FUNCTIONS
 ---------------------------------------------------------------------
 
 local function digRobust(digFunc, detectFunc)
@@ -1095,95 +1239,6 @@ function digAndDown()
   return pos_lib.down()
 end
 
--- SAFE BASE APPROACH: Always approach base from underground to avoid destroying structures
-local function safeGoToBase(status_msg)
-  local msg = status_msg or "Returning to base safely"
-  comms.sendStatus(msg .. " (underground approach)")
-  
-  -- Step 1: Go down to safe underground level first (Y=-5 or lower)
-  local safe_underground_y = -5
-  
-  comms.sendStatus("Descending to safe underground level...")
-  while state.y > safe_underground_y and not recall_activated do
-    if not digAndDown() then 
-      state.task = "STUCK"
-      return false 
-    end
-    if state.statistics.distance_traveled % 10 == 0 then 
-      comms.sendStatus("Descending safely: Y=" .. state.y) 
-    end
-  end
-  
-  -- Step 2: Navigate to base underground (0, safe_y, 0)
-  comms.sendStatus("Navigating to base underground...")
-  
-  -- Z movement underground
-  if state.z > 0 then
-    if not pos_lib.turnTo(0) then state.task = "STUCK"; return false end
-    while state.z > 0 and not recall_activated do
-      if not digAndMoveForward() then state.task = "STUCK"; return false end
-      if state.statistics.distance_traveled % 10 == 0 then comms.sendStatus("Underground navigation: Z=" .. state.z) end
-    end
-  elseif state.z < 0 then
-    if not pos_lib.turnTo(2) then state.task = "STUCK"; return false end
-    while state.z < 0 and not recall_activated do
-      if not digAndMoveForward() then state.task = "STUCK"; return false end
-      if state.statistics.distance_traveled % 10 == 0 then comms.sendStatus("Underground navigation: Z=" .. state.z) end
-    end
-  end
-  
-  -- X movement underground
-  if state.x < 0 then
-    if not pos_lib.turnTo(1) then state.task = "STUCK"; return false end
-    while state.x < 0 and not recall_activated do
-      if not digAndMoveForward() then state.task = "STUCK"; return false end
-      if state.statistics.distance_traveled % 10 == 0 then comms.sendStatus("Underground navigation: X=" .. state.x) end
-    end
-  elseif state.x > 0 then
-    if not pos_lib.turnTo(3) then state.task = "STUCK"; return false end
-    while state.x > 0 and not recall_activated do
-      if not digAndMoveForward() then state.task = "STUCK"; return false end
-      if state.statistics.distance_traveled % 10 == 0 then comms.sendStatus("Underground navigation: X=" .. state.x) end
-    end
-  end
-  
-  -- Step 3: Now we're at (0, safe_y, 0) - safely ascend to surface
-  comms.sendStatus("Safely ascending to base surface...")
-  while state.y < 0 and not recall_activated do
-    if not digAndUp() then state.task = "STUCK"; return false end
-    if state.statistics.distance_traveled % 5 == 0 then 
-      comms.sendStatus("Ascending safely: Y=" .. state.y) 
-    end
-  end
-  
-  comms.sendStatus("Safely arrived at base!")
-  return not recall_activated
-end
-
--- SAFE BASE DEPARTURE: Always leave base by going underground first
-local function safeLeaveBase(target_x, target_y, target_z, status_msg)
-  local msg = status_msg or "Leaving base safely"
-  comms.sendStatus(msg .. " (underground departure)")
-  
-  -- Step 1: Go down to safe underground level (Y=-5 or lower)
-  local safe_underground_y = -5
-  
-  comms.sendStatus("Descending from base to safe level...")
-  while state.y > safe_underground_y and not recall_activated do
-    if not digAndDown() then 
-      state.task = "STUCK"
-      return false 
-    end
-    if state.statistics.distance_traveled % 10 == 0 then 
-      comms.sendStatus("Safe descent: Y=" .. state.y) 
-    end
-  end
-  
-  -- Step 2: Use normal pathfinding once safely underground
-  comms.sendStatus("Navigating safely to destination...")
-  return pos_lib.goTo(target_x, target_y, target_z, status_msg)
-end
-
 -- NEW: Advanced ore vein following
 local function followVein(start_x, start_y, start_z, max_depth)
   local visited = {}
@@ -1368,7 +1423,7 @@ local function returnToBase()
 end
 
 ---------------------------------------------------------------------
--- SECTION 5: MINING STRATEGIES
+-- SECTION 6: MINING STRATEGIES
 ---------------------------------------------------------------------
 
 -- Branch mining strategy - much more efficient for ore finding
@@ -1549,7 +1604,7 @@ local function shaftMiningStrategy()
 end
 
 ---------------------------------------------------------------------
--- SECTION 6: MAIN PROGRAM LOGIC
+-- SECTION 7: MAIN PROGRAM LOGIC
 ---------------------------------------------------------------------
 
 function listenForCommands()
