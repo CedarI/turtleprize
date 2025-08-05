@@ -84,6 +84,66 @@ local SCAN_RADIUS = 16 -- Scan radius for geo scanner
 local REFRESH_RATE = 5 -- Seconds between automatic scans
 local VERSION = "1.5-clean"
 
+-- Initialize geo scanner immediately (before any functions that might use it)
+local geoscanner = nil
+
+print("Looking for geo scanner...")
+
+-- Try wrapping the back peripheral directly
+geoscanner = peripheral.wrap("back")
+
+if geoscanner and geoscanner.scan then
+    print("Geo scanner found on back and functional!")
+elseif geoscanner then
+    print("Peripheral found on back but no scan function available")
+    print("Available methods:", table.concat(peripheral.getMethods("back"), ", "))
+    geoscanner = nil
+else
+    print("No peripheral found on back")
+    
+    -- Fallback: try other locations and names
+    local possible_sides = {"front", "left", "right", "top", "bottom"}
+    
+    for _, side in ipairs(possible_sides) do
+        local p_type = peripheral.getType(side)
+        if p_type and (p_type == "geo_scanner" or p_type:find("geo")) then
+            geoscanner = peripheral.wrap(side)
+            if geoscanner and geoscanner.scan then
+                print("Found geo scanner on " .. side)
+                break
+            else
+                geoscanner = nil
+            end
+        end
+    end
+end
+
+-- Final error handling
+if not geoscanner then
+    print("ERROR: Could not initialize geo scanner!")
+    print("")
+    print("Debug information:")
+    print("Back peripheral type:", peripheral.getType("back") or "none")
+    if peripheral.getType("back") then
+        print("Back peripheral methods:", table.concat(peripheral.getMethods("back"), ", "))
+    end
+    print("")
+    print("All peripherals:")
+    local all_peripherals = peripheral.getNames()
+    for _, name in ipairs(all_peripherals) do
+        local p_type = peripheral.getType(name)
+        print("  " .. name .. " - " .. (p_type or "unknown"))
+    end
+    print("")
+    print("Manual test: Try running these commands:")
+    print("lua> geoscanner = peripheral.wrap('back')")
+    print("lua> print(geoscanner)")
+    print("lua> print(geoscanner.scan)")
+    return
+else
+    print("Geo scanner initialized successfully!")
+end
+
 -- Check for geo scanner - simplified approach since we know it's on "back"
 local geo = nil
 
@@ -274,66 +334,6 @@ local selected_ore = nil
 local last_scan_results = {}
 local scan_timer = nil
 local player_pos = {x = 0, y = 0, z = 0}
-
--- Initialize geo scanner immediately when script loads
-local geoscanner = nil
-
-print("Looking for geo scanner...")
-
--- Try wrapping the back peripheral directly
-geoscanner = peripheral.wrap("back")
-
-if geoscanner and geoscanner.scan then
-    print("Geo scanner found on back and functional!")
-elseif geoscanner then
-    print("Peripheral found on back but no scan function available")
-    print("Available methods:", table.concat(peripheral.getMethods("back"), ", "))
-    geoscanner = nil
-else
-    print("No peripheral found on back")
-    
-    -- Fallback: try other locations and names
-    local possible_sides = {"front", "left", "right", "top", "bottom"}
-    
-    for _, side in ipairs(possible_sides) do
-        local p_type = peripheral.getType(side)
-        if p_type and (p_type == "geo_scanner" or p_type:find("geo")) then
-            geoscanner = peripheral.wrap(side)
-            if geoscanner and geoscanner.scan then
-                print("Found geo scanner on " .. side)
-                break
-            else
-                geoscanner = nil
-            end
-        end
-    end
-end
-
--- Final error handling
-if not geoscanner then
-    print("ERROR: Could not initialize geo scanner!")
-    print("")
-    print("Debug information:")
-    print("Back peripheral type:", peripheral.getType("back") or "none")
-    if peripheral.getType("back") then
-        print("Back peripheral methods:", table.concat(peripheral.getMethods("back"), ", "))
-    end
-    print("")
-    print("All peripherals:")
-    local all_peripherals = peripheral.getNames()
-    for _, name in ipairs(all_peripherals) do
-        local p_type = peripheral.getType(name)
-        print("  " .. name .. " - " .. (p_type or "unknown"))
-    end
-    print("")
-    print("Manual test: Try running these commands:")
-    print("lua> geoscanner = peripheral.wrap('back')")
-    print("lua> print(geoscanner)")
-    print("lua> print(geoscanner.scan)")
-    return
-else
-    print("Geo scanner initialized successfully!")
-end
 
 -- UTILITY FUNCTIONS
 local function clearScreen()
