@@ -1966,9 +1966,6 @@ function main(args)
 end
 
 -- Safely collect command line arguments and start the program
-local args = {...}
-if not args then args = {} end
-
 -- Safety check for turtle environment
 if not turtle then
   print("ERROR: This program requires a turtle!")
@@ -1976,4 +1973,4 @@ if not turtle then
   return
 end
 
-main(args)
+main(...)
