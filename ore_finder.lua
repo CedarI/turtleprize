@@ -253,7 +253,66 @@ local selected_ore = nil
 local last_scan_results = {}
 local scan_timer = nil
 local player_pos = {x = 0, y = 0, z = 0}
-local geoscanner = nil -- Make sure this is in global scope
+
+-- Initialize geo scanner immediately when script loads
+local geoscanner = nil
+
+print("Looking for geo scanner...")
+
+-- Try wrapping the back peripheral directly
+geoscanner = peripheral.wrap("back")
+
+if geoscanner and geoscanner.scan then
+    print("Geo scanner found on back and functional!")
+elseif geoscanner then
+    print("Peripheral found on back but no scan function available")
+    print("Available methods:", table.concat(peripheral.getMethods("back"), ", "))
+    geoscanner = nil
+else
+    print("No peripheral found on back")
+    
+    -- Fallback: try other locations and names
+    local possible_sides = {"front", "left", "right", "top", "bottom"}
+    
+    for _, side in ipairs(possible_sides) do
+        local p_type = peripheral.getType(side)
+        if p_type and (p_type == "geo_scanner" or p_type:find("geo")) then
+            geoscanner = peripheral.wrap(side)
+            if geoscanner and geoscanner.scan then
+                print("Found geo scanner on " .. side)
+                break
+            else
+                geoscanner = nil
+            end
+        end
+    end
+end
+
+-- Final error handling
+if not geoscanner then
+    print("ERROR: Could not initialize geo scanner!")
+    print("")
+    print("Debug information:")
+    print("Back peripheral type:", peripheral.getType("back") or "none")
+    if peripheral.getType("back") then
+        print("Back peripheral methods:", table.concat(peripheral.getMethods("back"), ", "))
+    end
+    print("")
+    print("All peripherals:")
+    local all_peripherals = peripheral.getNames()
+    for _, name in ipairs(all_peripherals) do
+        local p_type = peripheral.getType(name)
+        print("  " .. name .. " - " .. (p_type or "unknown"))
+    end
+    print("")
+    print("Manual test: Try running these commands:")
+    print("lua> geoscanner = peripheral.wrap('back')")
+    print("lua> print(geoscanner)")
+    print("lua> print(geoscanner.scan)")
+    return
+else
+    print("Geo scanner initialized successfully!")
+end
 
 -- UTILITY FUNCTIONS
 local function clearScreen()
@@ -326,12 +385,6 @@ end
 
 -- SCANNING FUNCTIONS (Fixed to use correct geo scanner API)
 local function scanForOres(ore_blocks)
-    -- Safety check
-    if not geoscanner then
-        print("ERROR: Geo scanner not available!")
-        return {}
-    end
-    
     -- Always update position
     updatePlayerPosition()
     
