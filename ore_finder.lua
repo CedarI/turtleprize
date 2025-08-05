@@ -253,6 +253,7 @@ local selected_ore = nil
 local last_scan_results = {}
 local scan_timer = nil
 local player_pos = {x = 0, y = 0, z = 0}
+local geoscanner = nil -- Make sure this is in global scope
 
 -- UTILITY FUNCTIONS
 local function clearScreen()
@@ -325,6 +326,12 @@ end
 
 -- SCANNING FUNCTIONS (Fixed to use correct geo scanner API)
 local function scanForOres(ore_blocks)
+    -- Safety check
+    if not geoscanner then
+        print("ERROR: Geo scanner not available!")
+        return {}
+    end
+    
     -- Always update position
     updatePlayerPosition()
     
