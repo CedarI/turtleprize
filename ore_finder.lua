@@ -165,14 +165,11 @@ local function updatePlayerPosition()
         player_pos = {x = x, y = y, z = z}
         return true
     else
-        -- Fallback to geo scanner if GPS not available
-        local pos = geo.locate()
-        if pos then
-            player_pos = {x = pos.x, y = pos.y, z = pos.z}
-            return true
-        end
+        -- GPS not available - use relative positioning from (0,0,0)
+        -- The geo scanner works with relative coordinates anyway
+        player_pos = {x = 0, y = 0, z = 0}
+        return true
     end
-    return false
 end
 
 -- DIRECTION CALCULATION
