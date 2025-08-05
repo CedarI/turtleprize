@@ -60,9 +60,9 @@ end---------------------------------------------------------------------
 ---------------------------------------------------------------------
 
 -- CONFIGURATION
-local SCAN_RADIUS = 16 -- Reduced for debugging - was causing issues at 64
-local REFRESH_RATE = 2 -- Seconds between scans
-local VERSION = "1.1-debug"
+local SCAN_RADIUS = 8 -- Very small radius to avoid false positives
+local REFRESH_RATE = 3 -- Seconds between automatic scans
+local VERSION = "1.2-fixed"
 
 -- Check for geo scanner - simplified approach since we know it's on "back"
 local geo = nil
@@ -294,78 +294,74 @@ local function updatePlayerPosition()
     return true -- Always return true since relative positioning always works
 end
 
--- DIRECTION CALCULATION
+-- DIRECTION CALCULATION (Fixed)
 local function calculateDistance(x1, y1, z1, x2, y2, z2)
     return math.sqrt((x2-x1)^2 + (y2-y1)^2 + (z2-z1)^2)
 end
 
 local function calculateDirection(dx, dz)
-    local angle = math.atan2(dz, dx)
-    local degrees = math.deg(angle)
+    -- Ensure we have valid numbers
+    if not dx or not dz then return {arrow = "?", name = "Unknown"} end
     
-    -- Convert to 0-360 range
-    if degrees < 0 then degrees = degrees + 360 end
+    -- Handle zero case
+    if dx == 0 and dz == 0 then return {arrow = "●", name = "Here"} end
     
-    -- Convert to 8-directional arrows
-    local directions = {
-        {arrow = "→", name = "East"},     -- 0°
-        {arrow = "↘", name = "SE"},       -- 45°
-        {arrow = "↓", name = "South"},    -- 90°
-        {arrow = "↙", name = "SW"},       -- 135°
-        {arrow = "←", name = "West"},     -- 180°
-        {arrow = "↖", name = "NW"},       -- 225°
-        {arrow = "↑", name = "North"},    -- 270°
-        {arrow = "↗", name = "NE"},       -- 315°
-    }
-    
-    local sector = math.floor((degrees + 22.5) / 45) % 8
-    return directions[sector + 1]
+    -- Simple 4-direction system for clarity
+    if math.abs(dx) > math.abs(dz) then
+        if dx > 0 then
+            return {arrow = "→", name = "East"}
+        else
+            return {arrow = "←", name = "West"}
+        end
+    else
+        if dz > 0 then
+            return {arrow = "↓", name = "South"}
+        else
+            return {arrow = "↑", name = "North"}
+        end
+    end
 end
 
--- SCANNING FUNCTIONS
+-- SCANNING FUNCTIONS (Fixed to avoid false positives)
 local function scanForOres(ore_blocks)
-    -- Always update position (GPS optional, relative positioning always works)
+    -- Always update position
     updatePlayerPosition()
     
     local results = {}
-    local debug_info = {}
+    local total_scanned = 0
     
-    -- Scan for each block type
+    -- Scan for each block type with validation
     for _, block_name in ipairs(ore_blocks) do
-        print("DEBUG: Scanning for " .. block_name .. "...")
         local blocks = geo.scan(SCAN_RADIUS, block_name)
         
-        if blocks then
-            print("DEBUG: Scanner returned " .. #blocks .. " results for " .. block_name)
-            debug_info[block_name] = #blocks
-            
-            if #blocks > 0 then
-                for _, block in ipairs(blocks) do
-                    print("DEBUG: Found " .. block_name .. " at " .. block.x .. "," .. block.y .. "," .. block.z)
+        if blocks and type(blocks) == "table" and #blocks > 0 then
+            for _, block in ipairs(blocks) do
+                -- Validate block data
+                if block and block.x and block.y and block.z then
                     local distance = calculateDistance(
                         player_pos.x, player_pos.y, player_pos.z,
                         block.x, block.y, block.z
                     )
-                    table.insert(results, {
-                        x = block.x,
-                        y = block.y, 
-                        z = block.z,
-                        distance = distance,
-                        block_name = block_name
-                    })
+                    
+                    -- Only include blocks that are actually within our scan radius
+                    -- and not too close (might be false positives)
+                    if distance <= SCAN_RADIUS and distance >= 1 then
+                        table.insert(results, {
+                            x = block.x,
+                            y = block.y, 
+                            z = block.z,
+                            distance = distance,
+                            block_name = block_name
+                        })
+                    end
                 end
             end
-        else
-            print("DEBUG: Scanner returned nil for " .. block_name)
-            debug_info[block_name] = "nil"
         end
+        total_scanned = total_scanned + 1
     end
     
     -- Sort by distance
     table.sort(results, function(a, b) return a.distance < b.distance end)
-    
-    -- Store debug info for display
-    results.debug_info = debug_info
     
     return results
 end
@@ -389,14 +385,10 @@ local function drawMainMenu()
         index = index + 1
     end
     
-    term.setCursorPos(3, y)
-    term.setTextColor(colors.gray)
-    term.write("d. Debug Scanner")
-    term.setTextColor(colors.white)
-    y = y + 1
-    
     term.setCursorPos(1, y + 1)
-    term.write("Enter number (1-" .. (#ORE_CATEGORIES) .. "), 'd' for debug, or 'q' to quit:")
+    term.write("Enter number (1-" .. (#ORE_CATEGORIES) .. ") or 'q' to quit:")
+    term.setCursorPos(1, y + 3)
+    term.write("Note: Using " .. SCAN_RADIUS .. " block radius to reduce false positives")
 end
 
 local function drawOreMenu()
@@ -429,72 +421,55 @@ local function drawScanResults()
     
     term.setCursorPos(1, 4)
     term.setTextColor(selected_category.color)
-    term.write("Scanning for: " .. selected_ore.name)
+    term.write("Scanning: " .. selected_ore.name .. " (radius: " .. SCAN_RADIUS .. ")")
     term.setTextColor(colors.white)
     
     if #last_scan_results == 0 then
         term.setCursorPos(1, 6)
-        term.write("No " .. selected_ore.name .. " found within " .. SCAN_RADIUS .. " blocks")
+        term.write("No " .. selected_ore.name .. " found nearby")
         term.setCursorPos(1, 8)
-        term.write("Try moving to a different area")
-        
-        -- Debug: Show what block names we searched for
-        term.setCursorPos(1, 10)
-        term.write("Searched for blocks:")
-        local y = 11
-        for _, block_name in ipairs(selected_ore.blocks) do
-            if y <= 18 then -- Don't overflow screen
-                term.setCursorPos(3, y)
-                term.write("- " .. block_name)
-                y = y + 1
-            end
-        end
+        term.write("Try moving to a different area or")
+        term.setCursorPos(1, 9)
+        term.write("increase scan radius in the code")
     else
         local closest = last_scan_results[1]
         local dx = closest.x - player_pos.x
         local dz = closest.z - player_pos.z
         local direction = calculateDirection(dx, dz)
         
-        -- Draw large arrow
+        -- Show ore info
         term.setCursorPos(1, 6)
-        term.write("Closest " .. selected_ore.name .. ":")
+        term.write("Found " .. #last_scan_results .. " deposit(s)")
         
-        local w, h = term.getSize()
-        local arrow_x = math.floor(w / 2)
-        local arrow_y = 9
+        term.setCursorPos(1, 8)
+        term.write("CLOSEST:")
         
-        term.setCursorPos(arrow_x, arrow_y)
-        term.setTextColor(colors.lime)
-        term.write(direction.arrow)
-        term.setTextColor(colors.white)
-        
-        -- Distance info
-        term.setCursorPos(1, arrow_y + 2)
-        term.write("Distance: " .. math.floor(closest.distance) .. " blocks")
-        
-        term.setCursorPos(1, arrow_y + 3)
+        -- Show direction with bigger, clearer arrow
+        term.setCursorPos(1, 10)
         term.write("Direction: " .. direction.name)
         
-        term.setCursorPos(1, arrow_y + 4)
+        term.setCursorPos(1, 11)
+        term.setTextColor(colors.lime)
+        term.write("Arrow: " .. direction.arrow .. " " .. direction.arrow .. " " .. direction.arrow)
+        term.setTextColor(colors.white)
+        
+        term.setCursorPos(1, 13)
+        term.write("Distance: " .. math.floor(closest.distance) .. " blocks")
+        
+        term.setCursorPos(1, 14)
         term.write("Y-Level: " .. closest.y)
         
-        -- Show the actual block type found
-        term.setCursorPos(1, arrow_y + 5)
+        term.setCursorPos(1, 15)
         term.write("Block: " .. closest.block_name)
         
-        -- Show multiple results if available
+        -- Show other results
         if #last_scan_results > 1 then
-            term.setCursorPos(1, arrow_y + 7)
-            term.write("Other deposits found:")
+            term.setCursorPos(1, 17)
+            term.write("Other deposits:")
             for i = 2, math.min(3, #last_scan_results) do
                 local ore = last_scan_results[i]
-                term.setCursorPos(3, arrow_y + 6 + i)
-                term.write(math.floor(ore.distance) .. " blocks (" .. ore.block_name .. ")")
-            end
-            
-            if #last_scan_results > 3 then
-                term.setCursorPos(3, arrow_y + 10)
-                term.write("+" .. (#last_scan_results - 3) .. " more deposits")
+                term.setCursorPos(3, 16 + i)
+                term.write(math.floor(ore.distance) .. " blocks away (Y=" .. ore.y .. ")")
             end
         end
     end
@@ -523,10 +498,6 @@ local function handleMainMenuInput()
     
     if key == "q" then
         return false
-    elseif key == "d" then
-        debugScanner()
-        drawMainMenu()
-        return true
     end
     
     local num = tonumber(key)
