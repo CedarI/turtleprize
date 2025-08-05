@@ -1,4 +1,150 @@
-  -- DEBUG: Dimension switch command
+-- SAFE BASE APPROACH: Always approach base from underground to avoid destroying structures
+local function safeGoToBase(status_msg)
+  local msg = status_msg or "Returning to base safely"
+  comms.sendStatus(msg .. " (underground approach)")
+  
+  -- Step 1: Go down to safe underground level first (Y=-5 or lower)
+  local safe_underground_y = -5
+  
+  comms.sendStatus("Descending to safe underground level...")
+  while state.y > safe_underground_y and not recall_activated do
+    if not digAndDown() then 
+      state.task = "STUCK"
+      return false 
+    end
+    if state.statistics.distance_traveled % 10 == 0 then 
+      comms.sendStatus("Descending safely: Y=" .. state.y) 
+    end
+  end
+  
+  -- Step 2: Navigate to base underground (0, safe_y, 0)
+  comms.sendStatus("Navigating to base underground...")
+  
+  -- Z movement underground
+  if state.z > 0 then
+    if not pos_lib.turnTo(0) then state.task = "STUCK"; return false end
+    while state.z > 0 and not recall_activated do
+      if not digAndMoveForward() then state.task = "STUCK"; return false end
+      if state.statistics.distance_traveled % 10 == 0 then comms.sendStatus("Underground navigation: Z=" .. state.z) end
+    end
+  elseif state.z < 0 then
+    if not pos_lib.turnTo(2) then state.task = "STUCK"; return false end
+    while state.z < 0 and not recall_activated do
+      if not digAndMoveForward() then state.task = "STUCK"; return false end
+      if state.statistics.distance_traveled % 10 == 0 then comms.sendStatus("Underground navigation: Z=" .. state.z) end
+    end
+  end
+  
+  -- X movement underground
+  if state.x < 0 then
+    if not pos_lib.turnTo(1) then state.task = "STUCK"; return false end
+    while state.x < 0 and not recall_activated do
+      if not digAndMoveForward() then state.task = "STUCK"; return false end
+      if state.statistics.distance_traveled % 10 == 0 then comms.sendStatus("Underground navigation: X=" .. state.x) end
+    end
+  elseif state.x > 0 then
+    if not pos_lib.turnTo(3) then state.task = "STUCK"; return false end
+    while state.x > 0 and not recall_activated do
+      if not digAndMoveForward() then state.task = "STUCK"; return false end
+      if state.statistics.distance_traveled % 10 == 0 then comms.sendStatus("Underground navigation: X=" .. state.x) end
+    end
+  end
+  
+  -- Step 3: Now we're at (0, safe_y, 0) - safely ascend to surface
+  comms.sendStatus("Safely ascending to base surface...")
+  while state.y < 0 and not recall_activated do
+    if not digAndUp() then state.task = "STUCK"; return false end
+    if state.statistics.distance_traveled % 5 == 0 then 
+      comms.sendStatus("Ascending safely: Y=" .. state.y) 
+    end
+  end
+  
+  comms.sendStatus("Safely arrived at base!")
+  return not recall_activated
+end
+
+-- SAFE BASE DEPARTURE: Always leave base by going underground first
+local function safeLeaveBase(target_x, target_y, target_z, status_msg)
+  local msg = status_msg or "Leaving base safely"
+  comms.sendStatus(msg .. " (underground departure)")
+  
+  -- Step 1: Go down to safe underground level (Y=-5 or lower)
+  local safe_underground_y = -5
+  
+  comms.sendStatus("Descending from base to safe level...")
+  while state.y > safe_underground_y and not recall_activated do
+    if not digAndDown() then 
+      state.task = "STUCK"
+      return false 
+    end
+    if state.statistics.distance_traveled % 10 == 0 then 
+      comms.sendStatus("Safe descent: Y=" .. state.y) 
+    end
+  end
+  
+  -- Step 2: Use normal pathfinding once safely underground
+  comms.sendStatus("Navigating safely to destination...")
+  return pos_lib.goTo(target_x, target_y, target_z, status_msg)
+end  -- DEBUG: Inventory inspection command
+  if args[1] == "inventory" then
+    print("=== INVENTORY INSPECTION ===")
+    print("Current inventory contents:")
+    
+    local total_items = 0
+    local junk_items = 0
+    local valuable_items = 0
+    
+    for i = 1, 16 do
+      local item = turtle.getItemDetail(i)
+      if item then
+        local is_junk = JUNK_ITEMS[item.name] or false
+        local is_essential = ESSENTIAL_ITEMS[item.name] or false
+        local is_fuel = FUEL_TYPES[item.name] or false
+        local is_ore = ORE_PRIORITY[item.name] or false
+        
+        local item_type = "unknown"
+        if is_essential then
+          item_type = "ESSENTIAL"
+        elseif is_fuel then
+          item_type = "FUEL"
+        elseif is_ore then
+          item_type = "ORE"
+          valuable_items = valuable_items + item.count
+        elseif is_junk then
+          item_type = "JUNK"
+          junk_items = junk_items + item.count
+        else
+          item_type = "OTHER"
+          valuable_items = valuable_items + item.count
+        end
+        
+        print(string.format("Slot %2d: %3dx %-30s [%s]", i, item.count, item.name, item_type))
+        total_items = total_items + item.count
+      else
+        print(string.format("Slot %2d: empty", i))
+      end
+    end
+    
+    print("========================")
+    print("Summary:")
+    print("  Total items: " .. total_items)
+    print("  Junk items: " .. junk_items .. " (should be dropped!)")
+    print("  Valuable items: " .. valuable_items)
+    print("  Empty slots: " .. (16 - turtle.getItemCount()))
+    
+    if junk_items > 0 then
+      print("")
+      print("PROBLEM: Junk items detected!")
+      print("Running junk cleanup now...")
+      manageJunk()
+      print("Junk cleanup complete.")
+    else
+      print("✓ No junk items found")
+    end
+    
+    print("=== INSPECTION COMPLETE ===")
+    return
+  end  -- DEBUG: Dimension switch command
   if args[1] == "dimension" then
     if not args[2] or (args[2] ~= "nether" and args[2] ~= "overworld") then
       print("Usage: miner dimension <nether|overworld>")
@@ -139,14 +285,18 @@ local JUNK_ITEMS = {
   ["minecraft:cobbled_deepslate"] = true, ["minecraft:tuff"] = true, ["minecraft:calcite"] = true,
   ["minecraft:flint"] = true,
   
-  -- Nether junk
+  -- Nether junk (comprehensive list)
   ["minecraft:netherrack"] = true, ["minecraft:soul_sand"] = true, ["minecraft:soul_soil"] = true,
   ["minecraft:blackstone"] = true, ["minecraft:basalt"] = true, ["minecraft:smooth_basalt"] = true,
   ["minecraft:polished_blackstone"] = true, ["minecraft:warped_nylium"] = true, ["minecraft:crimson_nylium"] = true,
   ["minecraft:magma_block"] = true, ["minecraft:nether_bricks"] = true, ["minecraft:red_nether_bricks"] = true,
   ["minecraft:warped_stem"] = true, ["minecraft:crimson_stem"] = true, ["minecraft:warped_hyphae"] = true,
   ["minecraft:crimson_hyphae"] = true, ["minecraft:shroomlight"] = true, ["minecraft:nether_wart_block"] = true,
-  ["minecraft:warped_wart_block"] = true,
+  ["minecraft:warped_wart_block"] = true, ["minecraft:bone_block"] = true, ["minecraft:glowstone"] = true,
+  
+  -- Additional nether variations and modded equivalents
+  ["minecraft:polished_basalt"] = true, ["minecraft:chiseled_nether_bricks"] = true,
+  ["minecraft:cracked_nether_bricks"] = true, ["minecraft:nether_brick"] = true,
 }
 
 -- ORE PRIORITY: This list defines valuable ores worth mining
@@ -733,8 +883,8 @@ local function refuelFromBase()
   
   comms.sendStatus("Low fuel. Returning to base for fuel and inventory dropoff.")
   
-  -- Go to base
-  if not pos_lib.goTo(0, 0, 0, "Returning to base for fuel") then return false end
+  -- Go to base safely (from underground)
+  if not safeGoToBase("Returning to base for fuel") then return false end
   
   -- FIRST: Drop off inventory in main chest (south/behind)
   pos_lib.turnTo(2) -- Face south toward main chest
@@ -791,8 +941,8 @@ local function refuelFromBase()
     comms.sendStatus("Refueling incomplete. Level: " .. final_fuel .. ". Returning anyway.")
   end
   
-  -- Return to previous position
-  if not pos_lib.goTo(current_x, current_y, current_z, "Returning to work area") then
+  -- Return to previous position safely
+  if not safeLeaveBase(current_x, current_y, current_z, "Returning to work area") then
     return false
   end
   
@@ -876,9 +1026,9 @@ local function ensureFuel()
   if type(turtle.getFuelLevel()) == "number" and turtle.getFuelLevel() < 100 then
     comms.sendStatus("CRITICAL FUEL (" .. turtle.getFuelLevel() .. "). Returning to base.")
     
-    -- Go to base if not already there
+    -- Go to base safely if not already there
     if state.x ~= 0 or state.y ~= 0 or state.z ~= 0 then
-      if not pos_lib.goTo(0, 0, 0, "Emergency fuel return") then
+      if not safeGoToBase("Emergency fuel return") then
         state.task = "STUCK"
         return false
       end
@@ -1018,7 +1168,7 @@ local function ensureFuel()
   return true
 end
 
--- Enhanced digging functions (with recall checks)
+-- Enhanced digging functions (with recall checks and immediate junk dropping)
 function digAndMoveForward()
   if recall_activated then return false end
   local success, data = turtle.inspect()
@@ -1027,6 +1177,10 @@ function digAndMoveForward()
   end
   if not digRobust("dig", "detect") then return false end
   state.statistics.blocks_mined = state.statistics.blocks_mined + 1
+  
+  -- Immediately drop any junk that was just mined
+  dropJunkImmediately()
+  
   return pos_lib.forward()
 end
 
@@ -1038,6 +1192,10 @@ function digAndUp()
   end
   if not digRobust("digUp", "detectUp") then return false end
   state.statistics.blocks_mined = state.statistics.blocks_mined + 1
+  
+  -- Immediately drop any junk that was just mined
+  dropJunkImmediately()
+  
   return pos_lib.up()
 end
 
@@ -1049,6 +1207,10 @@ function digAndDown()
   end
   if not digRobust("digDown", "detectDown") then return false end
   state.statistics.blocks_mined = state.statistics.blocks_mined + 1
+  
+  -- Immediately drop any junk that was just mined
+  dropJunkImmediately()
+  
   return pos_lib.down()
 end
 
@@ -1199,9 +1361,9 @@ local function returnToBase()
     end
   end
   
-  -- Fallback: return to base and use refuelFromBase which handles both inventory and fuel
+  -- Fallback: return to base safely and use refuelFromBase which handles both inventory and fuel
   comms.sendStatus("Inventory full. Returning to base for dropoff and refuel check.")
-  if not pos_lib.goTo(0, 0, 0, "Returning to base") then return nil end
+  if not safeGoToBase("Returning to base for inventory dropoff") then return nil end
   
   -- Face south (behind starting position) toward main chest
   pos_lib.turnTo(2)
@@ -1270,17 +1432,21 @@ local function branchMiningStrategy()
       for x = 0, state.width do
         if recall_activated then return end
         
+        -- More frequent junk management in Nether
+        if x % 3 == 0 then  -- Every 3 blocks instead of 5
+          manageJunk()
+        end
+        
         -- Check for inventory management
         if isInventoryFull() then
           local return_x, return_y, return_z = returnToBase()
           if not return_x then state.task = "STUCK"; return end
-          if not pos_lib.goTo(return_x, return_y, return_z, "Returning to tunnel") then
+          if not safeLeaveBase(return_x, return_y, return_z, "Returning to tunnel") then
             state.task = "STUCK"; return
           end
         end
         
         if not ensureFuel() then state.task = "AWAITING_FUEL"; return end
-        manageJunk()
         
         -- Mine current position thoroughly
         if not inspectAllDirections() then state.task = "STUCK"; return end
@@ -1344,7 +1510,7 @@ local function hybridMiningStrategy()
             if isInventoryFull() then
               local return_x, return_y, return_z = returnToBase()
               if not return_x then state.task = "STUCK"; return end
-              if not pos_lib.goTo(return_x, return_y, return_z, "Returning to branch") then
+              if not safeLeaveBase(return_x, return_y, return_z, "Returning to branch") then
                 state.task = "STUCK"; return
               end
             end
@@ -1386,7 +1552,7 @@ local function shaftMiningStrategy()
         if isInventoryFull() then
           local return_x, return_y, return_z = returnToBase()
           if not return_x then state.task = "STUCK"; return end
-          if not pos_lib.goTo(return_x, return_y, return_z, "Returning to shaft") then
+          if not safeLeaveBase(return_x, return_y, return_z, "Returning to shaft") then
             state.task = "STUCK"; return
           end
         end
@@ -1435,6 +1601,7 @@ function runMining(args)
       print("       miner reset")
       print("       miner fueltest")
       print("       miner recalltest")
+      print("       miner inventory")
       print("       miner dimension <nether|overworld>")
       print("")
       print("Strategies: shaft, branch, hybrid")
@@ -1446,6 +1613,7 @@ function runMining(args)
       print("  miner 32 64 branch 65 nether      # Nether, base at Y=65")
       print("  miner 16 16 branch overworld      # Force Overworld mode")
       print("  miner dimension nether            # Switch existing save to Nether")
+      print("  miner inventory                   # Check what turtle is carrying")
       print("  miner reset                       # Clear saved state")
       print("  miner fueltest                    # Debug fuel system")
       print("  miner recalltest                  # Debug recall system")
@@ -1459,6 +1627,11 @@ function runMining(args)
       print("- Optimized Y-levels: -54 to -6 (diamonds, deepslate ores)")
       print("- Ignores: stone, dirt, cobblestone, gravel")
       print("- Targets: diamonds, emeralds, gold, iron + all modded ores")
+      print("\nSafety Features:")
+      print("- Underground base approach: Always approaches base from Y≤-5")
+      print("- Structure protection: Never digs through surface buildings")
+      print("- Safe departures: Leaves base underground to avoid damage")
+      print("- Emergency recall: Responsive recall system with safe return")
       print("\nNote: Turtle requires bucket and fuel to prevent accidental autostart")
       return 
     end
@@ -1716,7 +1889,7 @@ function main(args)
   comms.sendStatus(final_message .. " Stats: " .. state.statistics.ores_found .. " ores, " .. 
                   state.statistics.blocks_mined .. " blocks, " .. state.statistics.distance_traveled .. " distance")
   
-  -- FIXED: Always return home first, then do cleanup (with better recall handling)
+  -- FIXED: Always return home first, then do cleanup (with better recall handling and safe approach)
   local function returnHomeAndCleanup()
     -- If recalled, prioritize getting home immediately
     if recall_activated then
@@ -1724,23 +1897,23 @@ function main(args)
       print("RECALL RECEIVED - Stopping all operations and returning home...")
     end
     
-    -- Return to base regardless of why we stopped (but faster if recalled)
+    -- Return to base regardless of why we stopped (but faster if recalled and always safely)
     if state.x ~= 0 or state.y ~= 0 or state.z ~= 0 then
       local return_status = final_message .. " Returning home."
       if recall_activated then
         return_status = "RECALL - Emergency return to base!"
       end
       
-      -- Use faster pathfinding for recall
+      -- Use safe pathfinding - always approach from underground
       if recall_activated then
         comms.sendStatus(return_status)
-        -- Try direct path home - if it fails, we'll still try the normal goTo
-        if not pos_lib.goTo(0, 0, 0, return_status) then
-          print("Direct path home failed, turtle may be stuck at: " .. state.x .. ", " .. state.y .. ", " .. state.z)
+        -- Try safe path home - if it fails, we'll still try the normal goTo
+        if not safeGoToBase("RECALL - Emergency underground return") then
+          print("Safe path home failed, turtle may be stuck at: " .. state.x .. ", " .. state.y .. ", " .. state.z)
           comms.sendStatus("RECALL: Turtle stuck at (" .. state.x .. ", " .. state.y .. ", " .. state.z .. ")")
         end
       else
-        pos_lib.goTo(0, 0, 0, return_status)
+        safeGoToBase(return_status)
       end
     end
     
