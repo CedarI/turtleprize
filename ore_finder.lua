@@ -1,13 +1,13 @@
 ---------------------------------------------------------------------
 -- ATM10 ORE FINDER - Advanced Pocket Computer Geo Scanner App
--- v2.2-tracking-overhaul - By CedarI, cleanup by Gemini
+-- v2.3-final - By CedarI, cleanup by Gemini
 ---------------------------------------------------------------------
 
 -- CONFIGURATION
 local SCAN_RADIUS = 16
 local GPS_UPDATE_RATE = 0.5      -- Faster updates for smooth GPS tracking
-local SCANNER_UPDATE_RATE = 2.0  -- Slower updates for rescan mode to save energy
-local VERSION = "2.2-tracking-overhaul"
+local SCANNER_UPDATE_RATE = 2.0  -- Slower updates for rescan mode
+local VERSION = "2.3-final"
 
 ---------------------------------------------------------------------
 -- INITIALIZE PERIPHERALS
@@ -130,7 +130,7 @@ end
 
 local function updateTrackingScreen(dist, dir_x, dir_z, dir_y)
     local w, h = term.getSize()
-    for y = 4, h - 2 do term.setCursorPos(1, y); term.write(string.rep(" ", w)) end -- Clear area
+    for y = 4, h - 2 do term.setCursorPos(1, y); term.write(string.rep(" ", w)) end
 
     local mode = has_gps and "GPS Mode" or "Scanner Mode"
     term.setCursorPos(1, 4); term.write("Tracking: " .. state.target_ore.block_name .. " ("..mode..")")
@@ -144,7 +144,7 @@ local function updateTrackingScreen(dist, dir_x, dir_z, dir_y)
         term.setCursorPos(arrow_x + 1, arrow_y + 1); term.write(" [HERE] ")
     else
         term.setTextColor(colors.yellow)
-        if math.abs(dir_z) > math.abs(dir_x) then -- North/South is dominant
+        if math.abs(dir_z) > math.abs(dir_x) then -- North/South dominant
             if dir_z < 0 then -- North
                 term.setCursorPos(arrow_x+2, arrow_y+0); term.write(" ^ ")
                 term.setCursorPos(arrow_x+1, arrow_y+1); term.write("/_\\")
@@ -230,9 +230,10 @@ local function trackingLoop()
             local dist = math.sqrt(dir_x^2 + dir_y^2 + dir_z^2)
             updateTrackingScreen(dist, dir_x, dir_z, dir_y)
         else -- Non-GPS rescanning mode
-            performScan(true) -- Silent scan
+            performScan(true) -- This is a silent scan to get new relative data
             if #state.last_scan_results > 0 then
                 local new_closest = state.last_scan_results[1]
+                state.target_ore = new_closest -- Update the target with new relative data
                 updateTrackingScreen(new_closest.distance, new_closest.x, new_closest.z, new_closest.y)
             else
                 term.setCursorPos(1, 8); term.setTextColor(colors.red); term.write("Target lost!")
