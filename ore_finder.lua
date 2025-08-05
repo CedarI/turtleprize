@@ -160,16 +160,23 @@ local function drawHeader()
 end
 
 local function updatePlayerPosition()
-    local x, y, z = gps.locate()
-    if x and y and z then
-        player_pos = {x = x, y = y, z = z}
-        return true
-    else
-        -- GPS not available - use relative positioning from (0,0,0)
-        -- The geo scanner works with relative coordinates anyway
-        player_pos = {x = 0, y = 0, z = 0}
-        return true
+    -- Try GPS if available (completely optional)
+    local has_gps = false
+    if gps and gps.locate then
+        local x, y, z = gps.locate(2) -- 2 second timeout
+        if x and y and z then
+            player_pos = {x = x, y = y, z = z}
+            has_gps = true
+        end
     end
+    
+    -- If no GPS, use relative positioning from (0,0,0)
+    -- The geo scanner works with relative coordinates anyway
+    if not has_gps then
+        player_pos = {x = 0, y = 0, z = 0}
+    end
+    
+    return true -- Always return true since relative positioning always works
 end
 
 -- DIRECTION CALCULATION
@@ -202,9 +209,8 @@ end
 
 -- SCANNING FUNCTIONS
 local function scanForOres(ore_blocks)
-    if not updatePlayerPosition() then
-        return nil, "Cannot determine position"
-    end
+    -- Always update position (GPS optional, relative positioning always works)
+    updatePlayerPosition()
     
     local results = {}
     
@@ -353,13 +359,8 @@ local function performScan()
     term.setCursorPos(1, 3)
     term.write("Scanning...")
     
-    local results, error_msg = scanForOres(selected_ore.blocks)
-    if results then
-        last_scan_results = results
-    else
-        last_scan_results = {}
-        print("Scan error: " .. (error_msg or "Unknown error"))
-    end
+    local results = scanForOres(selected_ore.blocks)
+    last_scan_results = results or {}
     
     drawScanResults()
 end
