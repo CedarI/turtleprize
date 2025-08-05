@@ -8,57 +8,61 @@ local SCAN_RADIUS = 64 -- Maximum scan radius (adjust based on performance)
 local REFRESH_RATE = 2 -- Seconds between scans
 local VERSION = "1.0"
 
--- Check for required peripherals with multiple possible names
+-- Check for geo scanner - simplified approach since we know it's on "back"
 local geo = nil
-local possible_names = {"geoScanner", "geo_scanner", "geoscanner", "GeoScanner"}
 
--- Try to find geo scanner with different names
-for _, name in ipairs(possible_names) do
-    geo = peripheral.find(name)
-    if geo then
-        print("Found geo scanner as: " .. name)
-        break
+print("Looking for geo scanner...")
+
+-- Try wrapping the back peripheral directly
+geo = peripheral.wrap("back")
+
+if geo and geo.scan then
+    print("Geo scanner found on back and functional!")
+elseif geo then
+    print("Peripheral found on back but no scan function available")
+    print("Available methods:", table.concat(peripheral.getMethods("back"), ", "))
+    geo = nil
+else
+    print("No peripheral found on back")
+    
+    -- Fallback: try other locations and names
+    local possible_sides = {"front", "left", "right", "top", "bottom"}
+    
+    for _, side in ipairs(possible_sides) do
+        local p_type = peripheral.getType(side)
+        if p_type and (p_type == "geo_scanner" or p_type:find("geo")) then
+            geo = peripheral.wrap(side)
+            if geo and geo.scan then
+                print("Found geo scanner on " .. side)
+                break
+            else
+                geo = nil
+            end
+        end
     end
 end
 
--- If still not found, try looking through all peripherals
+-- Final error handling
 if not geo then
-    print("Geo scanner not found with standard names.")
-    print("Checking all available peripherals...")
-    
+    print("ERROR: Could not initialize geo scanner!")
+    print("")
+    print("Debug information:")
+    print("Back peripheral type:", peripheral.getType("back") or "none")
+    if peripheral.getType("back") then
+        print("Back peripheral methods:", table.concat(peripheral.getMethods("back"), ", "))
+    end
+    print("")
+    print("All peripherals:")
     local all_peripherals = peripheral.getNames()
     for _, name in ipairs(all_peripherals) do
-        local p = peripheral.wrap(name)
-        if p and p.scan then  -- Check if it has the scan method
-            geo = p
-            print("Found geo scanner peripheral: " .. name)
-            break
-        end
-    end
-end
-
--- Final check and error handling
-if not geo then
-    print("ERROR: Geo Scanner not found!")
-    print("")
-    print("Available peripherals:")
-    local all_peripherals = peripheral.getNames()
-    if #all_peripherals == 0 then
-        print("  (none)")
-    else
-        for _, name in ipairs(all_peripherals) do
-            local p = peripheral.wrap(name)
-            print("  " .. name .. " - " .. peripheral.getType(name))
-        end
+        local p_type = peripheral.getType(name)
+        print("  " .. name .. " - " .. (p_type or "unknown"))
     end
     print("")
-    print("Requirements:")
-    print("1. Advanced Pocket Computer (not regular)")
-    print("2. Geo Scanner addon from Advanced Peripherals")
-    print("3. Make sure Advanced Peripherals mod is installed")
-    print("")
-    print("If you see a geo scanner above but it's not working,")
-    print("the peripheral name might be different. Please report this.")
+    print("Manual test: Try running these commands:")
+    print("lua> geo = peripheral.wrap('back')")
+    print("lua> print(geo)")
+    print("lua> print(geo.scan)")
     return
 end
 
