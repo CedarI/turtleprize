@@ -1,37 +1,211 @@
----------------------------------------------------------------------
+  -- DEBUG: Dimension switch command
+  if args[1] == "dimension" then
+    if not args[2] or (args[2] ~= "nether" and args[2] ~= "overworld") then
+      print("Usage: miner dimension <nether|overworld>")
+      print("Current dimension: " .. (state.dimension or "unknown"))
+      return
+    end
+    
+    -- Load current state
+    loadState()
+    
+    local new_dimension = args[2]
+    local old_dimension = state.dimension or "unknown"
+    
+    -- Update dimension and branch levels
+    state.dimension = new_dimension
+    if new_dimension == "nether" then
+      BRANCH_LEVELS = NETHER_BRANCH_LEVELS
+    else
+      BRANCH_LEVELS = OVERWORLD_BRANCH_LEVELS
+    end
+    
+    -- Clear surface data to force re-detection
+    state.surfaceY = nil
+    
+    saveState()
+    
+    print("Dimension switched: " .. old_dimension .. " -> " .. new_dimension)
+    print("Branch levels updated for " .. new_dimension .. " mining")
+    print("Surface level will be re-detected on next run")
+    
+    return
+  end-- NEW: Auto-detect dimension based on surrounding blocks
+local function detectDimension()
+  local nether_blocks = 0
+  local overworld_blocks = 0
+  
+  -- Check blocks in multiple directions
+  local check_directions = {
+    function() return turtle.inspect() end,
+    function() return turtle.inspectUp() end,
+    function() return turtle.inspectDown() end
+  }
+  
+  for _, check_func in ipairs(check_directions) do
+    local success, data = check_func()
+    if success and data and data.name then
+      if data.name == "minecraft:netherrack" or data.name == "minecraft:basalt" or 
+         data.name == "minecraft:blackstone" or data.name == "minecraft:soul_sand" or
+         data.name == "minecraft:soul_soil" or data.name:find("nether") then
+        nether_blocks = nether_blocks + 1
+      elseif data.name == "minecraft:stone" or data.name == "minecraft:deepslate" or
+             data.name == "minecraft:dirt" or data.name == "minecraft:andesite" or
+             data.name == "minecraft:diorite" or data.name == "minecraft:granite" then
+        overworld_blocks = overworld_blocks + 1
+      end
+    end
+  end
+  
+  -- Turn around to check more directions
+  for turn = 1, 4 do
+    turtle.turnRight()
+    local success, data = turtle.inspect()
+    if success and data and data.name then
+      if data.name == "minecraft:netherrack" or data.name == "minecraft:basalt" or 
+         data.name == "minecraft:blackstone" or data.name:find("nether") then
+        nether_blocks = nether_blocks + 1
+      elseif data.name == "minecraft:stone" or data.name == "minecraft:deepslate" or
+             data.name == "minecraft:dirt" then
+        overworld_blocks = overworld_blocks + 1
+      end
+    end
+  end
+  
+  if nether_blocks > overworld_blocks then
+    return "nether"
+  else
+    return "overworld"
+  end
+end  -- DEBUG: Recall system test command
+  if args[1] == "recalltest" then
+    print("=== RECALL SYSTEM TEST ===")
+    print("Computer ID: " .. os.getComputerID())
+    print("Home base ID: " .. HOME_BASE_ID)
+    print("Command protocol: " .. COMMAND_PROTOCOL)
+    
+    comms.init()
+    
+    print("Starting recall listener test...")
+    print("Send recall command from monitor to test")
+    print("Waiting 10 seconds for recall command...")
+    
+    local test_timer = os.startTimer(10)
+    
+    while true do
+      local event, p1, p2, p3 = os.pullEvent()
+      
+      if event == "rednet_message" then
+        local sender_id, message, protocol = p1, p2, p3
+        print("Received message:")
+        print("  From: " .. sender_id)
+        print("  Protocol: " .. (protocol or "none"))
+        print("  Message: " .. (message or "none"))
+        
+        if protocol == COMMAND_PROTOCOL and message == "recall" then
+          print("SUCCESS: Recall command received correctly!")
+          recall_activated = true
+          break
+        else
+          print("Not a recall command, continuing to listen...")
+        end
+      elseif event == "timer" and p1 == test_timer then
+        print("TIMEOUT: No recall command received in 10 seconds")
+        print("Check:")
+        print("1. Is monitor computer running and sending to ID " .. os.getComputerID() .. "?")
+        print("2. Are both computers within wireless range?")
+        print("3. Is HOME_BASE_ID set correctly in miner.lua?")
+        break
+      end
+    end
+    
+    if recall_activated then
+      print("Recall flag set successfully!")
+      print("Turtle would now stop mining and return home.")
+    end
+    
+    print("=== RECALL TEST COMPLETE ===")
+    return
+  end---------------------------------------------------------------------
 -- SECTION 1: CONFIGURATION
 ---------------------------------------------------------------------
 
 -- JUNK ITEMS: Any item in this list will be dropped.
 local JUNK_ITEMS = {
+  -- Overworld junk
   ["minecraft:stone"] = true, ["minecraft:cobblestone"] = true, ["minecraft:dirt"] = true,
   ["minecraft:gravel"] = true, ["minecraft:sand"] = true, ["minecraft:andesite"] = true,
   ["minecraft:diorite"] = true, ["minecraft:granite"] = true, ["minecraft:deepslate"] = true,
   ["minecraft:cobbled_deepslate"] = true, ["minecraft:tuff"] = true, ["minecraft:calcite"] = true,
   ["minecraft:flint"] = true,
+  
+  -- Nether junk
+  ["minecraft:netherrack"] = true, ["minecraft:soul_sand"] = true, ["minecraft:soul_soil"] = true,
+  ["minecraft:blackstone"] = true, ["minecraft:basalt"] = true, ["minecraft:smooth_basalt"] = true,
+  ["minecraft:polished_blackstone"] = true, ["minecraft:warped_nylium"] = true, ["minecraft:crimson_nylium"] = true,
+  ["minecraft:magma_block"] = true, ["minecraft:nether_bricks"] = true, ["minecraft:red_nether_bricks"] = true,
+  ["minecraft:warped_stem"] = true, ["minecraft:crimson_stem"] = true, ["minecraft:warped_hyphae"] = true,
+  ["minecraft:crimson_hyphae"] = true, ["minecraft:shroomlight"] = true, ["minecraft:nether_wart_block"] = true,
+  ["minecraft:warped_wart_block"] = true,
 }
 
 -- ORE PRIORITY: This list defines valuable ores worth mining
 local ORE_PRIORITY = {
+  -- ATM10 Special Ores (Highest Priority)
   ["allthemodium:allthemodium_ore"] = true, ["allthemodium:vibranium_ore"] = true, ["allthemodium:unobtainium_ore"] = true,
+  
+  -- Vanilla High-Value Ores
   ["minecraft:diamond_ore"] = true, ["minecraft:deepslate_diamond_ore"] = true, ["minecraft:ancient_debris"] = true,
-  ["minecraft:emerald_ore"] = true, ["minecraft:deepslate_emerald_ore"] = true, ["minecraft:lapis_ore"] = true,
-  ["minecraft:deepslate_lapis_ore"] = true, ["minecraft:gold_ore"] = true, ["minecraft:deepslate_gold_ore"] = true,
-  ["mekanism:osmium_ore"] = true, ["mekanism:deepslate_osmium_ore"] = true, ["mekanism:uranium_ore"] = true,
-  ["mekanism:deepslate_uranium_ore"] = true, ["mekanism:fluorite_ore"] = true, ["mekanism:deepslate_fluorite_ore"] = true,
-  ["mekanism:tin_ore"] = true, ["mekanism:deepslate_tin_ore"] = true, ["mekanism:lead_ore"] = true,
-  ["mekanism:deepslate_lead_ore"] = true, ["thermal:tin_ore"] = true, ["thermal:deepslate_tin_ore"] = true,
-  ["alltheores:tin_ore"] = true, ["thermal:lead_ore"] = true, ["thermal:deepslate_lead_ore"] = true,
-  ["alltheores:lead_ore"] = true, ["thermal:silver_ore"] = true, ["thermal:deepslate_silver_ore"] = true,
-  ["alltheores:silver_ore"] = true, ["thermal:nickel_ore"] = true, ["thermal:deepslate_nickel_ore"] = true,
-  ["alltheores:nickel_ore"] = true, ["alltheores:aluminum_ore"] = true, ["alltheores:zinc_ore"] = true,
-  ["thermal:cinnabar_ore"] = true, ["thermal:deepslate_cinnabar_ore"] = true, ["thermal:niter_ore"] = true,
-  ["thermal:deepslate_niter_ore"] = true, ["thermal:sulfur_ore"] = true, ["thermal:deepslate_sulfur_ore"] = true,
-  ["thermal:apatite_ore"] = true, ["thermal:deepslate_apatite_ore"] = true, ["create:zinc_ore"] = true,
-  ["create:deepslate_zinc_ore"] = true, ["ae2:certus_quartz_ore"] = true, ["ae2:deepslate_certus_quartz_ore"] = true,
-  ["minecraft:iron_ore"] = true, ["minecraft:deepslate_iron_ore"] = true, ["minecraft:copper_ore"] = true,
-  ["minecraft:deepslate_copper_ore"] = true, ["minecraft:redstone_ore"] = true, ["minecraft:deepslate_redstone_ore"] = true,
+  ["minecraft:emerald_ore"] = true, ["minecraft:deepslate_emerald_ore"] = true,
+  
+  -- Nether Ores (Vanilla)
+  ["minecraft:nether_gold_ore"] = true, ["minecraft:nether_quartz_ore"] = true, 
+  ["minecraft:gilded_blackstone"] = true,
+  
+  -- Standard Valuable Ores
+  ["minecraft:lapis_ore"] = true, ["minecraft:deepslate_lapis_ore"] = true, 
+  ["minecraft:gold_ore"] = true, ["minecraft:deepslate_gold_ore"] = true,
+  ["minecraft:iron_ore"] = true, ["minecraft:deepslate_iron_ore"] = true, 
+  ["minecraft:copper_ore"] = true, ["minecraft:deepslate_copper_ore"] = true, 
+  ["minecraft:redstone_ore"] = true, ["minecraft:deepslate_redstone_ore"] = true,
   ["minecraft:coal_ore"] = true, ["minecraft:deepslate_coal_ore"] = true,
+  
+  -- Mekanism Ores (Overworld + Nether variants)
+  ["mekanism:osmium_ore"] = true, ["mekanism:deepslate_osmium_ore"] = true, 
+  ["mekanism:uranium_ore"] = true, ["mekanism:deepslate_uranium_ore"] = true, 
+  ["mekanism:fluorite_ore"] = true, ["mekanism:deepslate_fluorite_ore"] = true,
+  ["mekanism:tin_ore"] = true, ["mekanism:deepslate_tin_ore"] = true, 
+  ["mekanism:lead_ore"] = true, ["mekanism:deepslate_lead_ore"] = true,
+  
+  -- Thermal Expansion Ores
+  ["thermal:tin_ore"] = true, ["thermal:deepslate_tin_ore"] = true,
+  ["thermal:lead_ore"] = true, ["thermal:deepslate_lead_ore"] = true,
+  ["thermal:silver_ore"] = true, ["thermal:deepslate_silver_ore"] = true,
+  ["thermal:nickel_ore"] = true, ["thermal:deepslate_nickel_ore"] = true,
+  ["thermal:cinnabar_ore"] = true, ["thermal:deepslate_cinnabar_ore"] = true, 
+  ["thermal:niter_ore"] = true, ["thermal:deepslate_niter_ore"] = true, 
+  ["thermal:sulfur_ore"] = true, ["thermal:deepslate_sulfur_ore"] = true,
+  ["thermal:apatite_ore"] = true, ["thermal:deepslate_apatite_ore"] = true,
+  
+  -- Create Ores
+  ["create:zinc_ore"] = true, ["create:deepslate_zinc_ore"] = true,
+  
+  -- Applied Energistics Ores
+  ["ae2:certus_quartz_ore"] = true, ["ae2:deepslate_certus_quartz_ore"] = true,
+  
+  -- AllTheOres Mod Ores
+  ["alltheores:tin_ore"] = true, ["alltheores:lead_ore"] = true, ["alltheores:silver_ore"] = true,
+  ["alltheores:nickel_ore"] = true, ["alltheores:aluminum_ore"] = true, ["alltheores:zinc_ore"] = true,
+  
+  -- Potential Nether variants (if they exist in ATM10)
+  ["thermal:nether_tin_ore"] = true, ["thermal:nether_lead_ore"] = true, ["thermal:nether_silver_ore"] = true,
+  ["thermal:nether_nickel_ore"] = true, ["thermal:nether_cinnabar_ore"] = true, ["thermal:nether_sulfur_ore"] = true,
+  ["thermal:nether_apatite_ore"] = true, ["thermal:nether_niter_ore"] = true,
+  ["mekanism:nether_osmium_ore"] = true, ["mekanism:nether_uranium_ore"] = true, ["mekanism:nether_fluorite_ore"] = true,
+  ["mekanism:nether_tin_ore"] = true, ["mekanism:nether_lead_ore"] = true,
+  ["alltheores:nether_tin_ore"] = true, ["alltheores:nether_lead_ore"] = true, ["alltheores:nether_silver_ore"] = true,
+  ["alltheores:nether_nickel_ore"] = true, ["alltheores:nether_aluminum_ore"] = true, ["alltheores:nether_zinc_ore"] = true,
+  ["create:nether_zinc_ore"] = true, ["ae2:nether_certus_quartz_ore"] = true,
 }
 
 -- BEHAVIOR SETTINGS
@@ -44,7 +218,11 @@ local SAFE_SLOT = 16
 
 -- NEW: Mining strategy settings
 local MINING_STRATEGY = "branch" -- Options: "shaft", "branch", "hybrid"
-local BRANCH_LEVELS = {-54, -50, -46, -42, -38, -34, -30, -26, -22, -18, -14, -10, -6} -- Key Y levels for branch mining
+-- Overworld levels (for diamond, deepslate ores, etc.)
+local OVERWORLD_BRANCH_LEVELS = {-54, -50, -46, -42, -38, -34, -30, -26, -22, -18, -14, -10, -6}
+-- Nether levels (for ancient debris, nether gold, quartz, etc.)
+local NETHER_BRANCH_LEVELS = {8, 10, 12, 14, 16, 18, 20, 22, 32, 48, 64, 80, 96}
+local BRANCH_LEVELS = OVERWORLD_BRANCH_LEVELS -- Default to overworld (can be changed in-game)
 local TUNNEL_SPACING = 3 -- Spacing between parallel tunnels
 local VEIN_FOLLOW_DEPTH = 3 -- How far to follow ore veins
 
@@ -316,19 +494,39 @@ local function loadState()
   return false
 end
 
--- Enhanced initialization with strategy selection and surface override
+-- Enhanced initialization with strategy selection and dimension detection
 local function init(args)
   local surface_override = nil
+  local dimension = "overworld" -- Default dimension
+  
   if args[4] and tonumber(args[4]) then
     surface_override = tonumber(args[4])
+  elseif args[4] and (args[4] == "nether" or args[4] == "overworld") then
+    dimension = args[4]
+  end
+  
+  if args[5] and (args[5] == "nether" or args[5] == "overworld") then
+    dimension = args[5]
+  end
+  
+  -- Set appropriate branch levels based on dimension
+  if dimension == "nether" then
+    BRANCH_LEVELS = NETHER_BRANCH_LEVELS
+    print("Nether mining mode activated!")
+    print("Optimized for: Ancient Debris (Y=8-22), Nether Gold, Quartz")
+  else
+    BRANCH_LEVELS = OVERWORLD_BRANCH_LEVELS
+    print("Overworld mining mode activated!")
+    print("Optimized for: Diamonds, Deepslate ores, standard minerals")
   end
   
   state = {
     x = 0, y = 0, z = 0, facing = 0, task = "STARTING",
     width = tonumber(args[1]) or 32, length = tonumber(args[2]) or 64,
     strategy = args[3] or MINING_STRATEGY,
+    dimension = dimension,
     progress = { x = 0, z = 0, level_index = 1 },
-    surfaceY = surface_override, -- Allow manual surface level override
+    surfaceY = surface_override,
     inventory = {},
     statistics = { blocks_mined = 0, ores_found = 0, distance_traveled = 0 }
   }
@@ -461,13 +659,13 @@ end
 
 local function digRobust(digFunc, detectFunc)
   local attempts = 0
-  while turtle[detectFunc]() do
+  while turtle[detectFunc]() and not recall_activated do
     if attempts > 5 then return false end
     if not turtle[digFunc]() then return false end
     attempts = attempts + 1
     os.sleep(0.1)
   end
-  return true
+  return not recall_activated
 end
 
 -- Enhanced inventory management
@@ -489,16 +687,42 @@ end
 
 local function manageJunk()
   consolidateInventory()
+  local junk_dropped = 0
+  
   for i = 2, 16 do
     if i ~= FUEL_SLOT then
       local item = turtle.getItemDetail(i)
       if item and JUNK_ITEMS[item.name] then
         turtle.select(i)
         turtle.drop()
+        junk_dropped = junk_dropped + item.count
+        print("Dropped " .. item.count .. "x " .. item.name)
       end
     end
   end
+  
   turtle.select(SAFE_SLOT)
+  
+  if junk_dropped > 0 then
+    print("Total junk dropped: " .. junk_dropped .. " items")
+  end
+end
+
+-- NEW: Immediate junk dropping for common waste blocks
+local function dropJunkImmediately()
+  local current_slot = turtle.getSelectedSlot()
+  
+  for i = 2, 16 do
+    if i ~= FUEL_SLOT then
+      local item = turtle.getItemDetail(i)
+      if item and JUNK_ITEMS[item.name] then
+        turtle.select(i)
+        turtle.drop() -- Drop immediately
+      end
+    end
+  end
+  
+  turtle.select(current_slot) -- Restore previous selection
 end
 
 -- Enhanced fuel management functions (continued)
@@ -607,6 +831,12 @@ local function ensureFuel()
   if type(state.fuelLevel) == "number" and state.fuelLevel < FUEL_LOW_THRESHOLD then
     comms.sendStatus("Fuel low (" .. state.fuelLevel .. "), attempting to refuel.")
     
+    -- Check recall before fuel operations
+    if recall_activated then 
+      comms.sendStatus("Recall activated during fuel check. Aborting fuel operations.")
+      return false 
+    end
+    
     -- First, try to consolidate any fuel in inventory
     consolidateFuel()
     
@@ -623,11 +853,17 @@ local function ensureFuel()
     end
     turtle.select(SAFE_SLOT)
     
+    -- Check recall again before trying other fuel sources
+    if recall_activated then 
+      comms.sendStatus("Recall activated during refueling. Stopping fuel operations.")
+      return false 
+    end
+    
     -- If still low, try lava
     if type(turtle.getFuelLevel()) == "number" and turtle.getFuelLevel() < FUEL_LOW_THRESHOLD then
       if not refuelFromLava() then
-        -- If still low, try base
-        if not refuelFromBase() then
+        -- If still low, try base (but only if not recalled)
+        if not recall_activated and not refuelFromBase() then
           print("WARNING: No fuel source found.")
         end
       end
@@ -636,7 +872,7 @@ local function ensureFuel()
     comms.sendStatus("Refueling attempt finished. Fuel: " .. turtle.getFuelLevel())
   end
   
-  -- CRITICAL FUEL HANDLING - Stay at base and wait
+  -- CRITICAL FUEL HANDLING - Stay at base and wait (but respect recall)
   if type(turtle.getFuelLevel()) == "number" and turtle.getFuelLevel() < 100 then
     comms.sendStatus("CRITICAL FUEL (" .. turtle.getFuelLevel() .. "). Returning to base.")
     
@@ -648,6 +884,12 @@ local function ensureFuel()
       end
     end
     
+    -- Check recall before entering fuel wait loop
+    if recall_activated then
+      comms.sendStatus("Recall activated during critical fuel handling.")
+      return false
+    end
+    
     -- Drop off inventory first
     pos_lib.turnTo(2) -- Face south toward main chest
     for i = 2, 16 do
@@ -657,59 +899,128 @@ local function ensureFuel()
       end
     end
     
-    -- Wait at base until fuel is available
+    -- Wait at base until fuel is available (but check recall frequently)
     comms.sendStatus("WAITING FOR FUEL. Please add fuel to the fuel chest (to the left).")
     print("CRITICAL FUEL - Waiting at base for fuel to be added to fuel chest...")
+    print("Current fuel level: " .. turtle.getFuelLevel())
+    print("Press 'r' on monitor to recall if needed.")
     
     while type(turtle.getFuelLevel()) == "number" and turtle.getFuelLevel() < 500 do
-      if recall_activated then return false end
+      -- CRITICAL: Check recall at the start of every fuel wait loop
+      if recall_activated then 
+        comms.sendStatus("Recall activated while waiting for fuel. Stopping.")
+        return false 
+      end
       
       -- Check fuel chest periodically
       pos_lib.turnTo(3) -- Face west toward fuel chest
+      
+      -- Clear fuel slot first to make room
       turtle.select(FUEL_SLOT)
+      local existing_fuel = turtle.getItemDetail(FUEL_SLOT)
+      if existing_fuel then
+        print("Fuel slot has: " .. existing_fuel.count .. "x " .. existing_fuel.name)
+      else
+        print("Fuel slot is empty")
+      end
       
       local fuel_added = false
-      -- Try to get fuel from chest and refuel immediately
-      if turtle.suck() then
-        local item = turtle.getItemDetail(FUEL_SLOT)
-        if item and FUEL_TYPES[item.name] and not ESSENTIAL_ITEMS[item.name] then
-          print("Found " .. item.name .. " in fuel chest!")
-          
-          -- Refuel the entire stack
-          local fuel_value = FUEL_TYPES[item.name]
-          local fuel_before = turtle.getFuelLevel()
-          turtle.refuel(item.count)
-          local fuel_after = turtle.getFuelLevel()
-          
-          print("Refueled +" .. (fuel_after - fuel_before) .. " fuel")
-          fuel_added = true
-          comms.sendStatus("Refueled! Fuel level: " .. fuel_after)
+      local attempts = 0
+      
+      -- Try multiple times to get fuel and refuel
+      while turtle.getFuelLevel() < 500 and attempts < 5 and not recall_activated do
+        attempts = attempts + 1
+        print("Fuel attempt " .. attempts .. "/5")
+        
+        -- Try to get fuel from chest
+        if turtle.suck() then
+          local item = turtle.getItemDetail(FUEL_SLOT)
+          if item then
+            print("Got from chest: " .. item.count .. "x " .. item.name)
+            
+            if FUEL_TYPES[item.name] then
+              print("This is valid fuel! Refueling...")
+              
+              -- Refuel the entire stack
+              local fuel_before = turtle.getFuelLevel()
+              local fuel_consumed = turtle.refuel(item.count)
+              local fuel_after = turtle.getFuelLevel()
+              
+              print("Fuel before: " .. fuel_before)
+              print("Items consumed: " .. fuel_consumed)
+              print("Fuel after: " .. fuel_after)
+              print("Fuel gained: " .. (fuel_after - fuel_before))
+              
+              if fuel_after > fuel_before then
+                fuel_added = true
+                comms.sendStatus("Refueled! Fuel level: " .. fuel_after)
+              else
+                print("WARNING: No fuel gained despite consuming items!")
+              end
+            else
+              print("Not fuel: " .. item.name .. " - putting back")
+              turtle.drop() -- Put back non-fuel items
+            end
+          else
+            print("Got nothing from chest or fuel slot is full")
+            break -- Stop trying if we can't get anything
+          end
         else
-          turtle.drop() -- Put back non-fuel items
+          print("Cannot suck from fuel chest - might be empty")
+          break -- Stop if chest is empty
         end
+        
+        -- Check recall between fuel attempts
+        if recall_activated then
+          print("Recall activated during fuel attempts. Stopping.")
+          break
+        end
+        
+        -- Small delay between attempts
+        os.sleep(0.5)
       end
       
       turtle.select(SAFE_SLOT)
       
-      if not fuel_added then
-        -- Still no fuel, wait and try again
-        comms.sendStatus("Still waiting for fuel. Current: " .. turtle.getFuelLevel() .. "/500 needed")
-        os.sleep(5) -- Wait 5 seconds before checking again
+      if recall_activated then
+        comms.sendStatus("Recall activated while refueling. Stopping fuel wait.")
+        return false
       end
+      
+      if not fuel_added then
+        -- Still no fuel, wait and try again (but check recall more frequently)
+        local current_fuel = turtle.getFuelLevel()
+        comms.sendStatus("Still waiting for fuel. Current: " .. current_fuel .. "/500 needed")
+        print("Still need fuel. Current: " .. current_fuel .. "/500")
+        
+        -- Wait in smaller chunks so we can check recall more often
+        for wait_chunk = 1, 10 do
+          if recall_activated then return false end
+          os.sleep(0.5) -- Total 5 second wait, but check recall every 0.5s
+        end
+      end
+    end
+    
+    if recall_activated then
+      comms.sendStatus("Recall activated during fuel wait. Stopping operations.")
+      return false
     end
     
     if type(turtle.getFuelLevel()) == "number" and turtle.getFuelLevel() >= 500 then
       comms.sendStatus("Fuel restored! Level: " .. turtle.getFuelLevel() .. ". Resuming operations.")
-      print("Fuel restored! Resuming mining operations.")
+      print("Fuel restored! Level: " .. turtle.getFuelLevel() .. ". Resuming mining operations.")
       return true
+    else
+      print("Still low fuel after attempts: " .. turtle.getFuelLevel())
     end
   end
   
   return true
 end
 
--- Enhanced digging functions
+-- Enhanced digging functions (with recall checks)
 function digAndMoveForward()
+  if recall_activated then return false end
   local success, data = turtle.inspect()
   if success and data and data.name and ORE_PRIORITY[data.name] then
     state.statistics.ores_found = state.statistics.ores_found + 1
@@ -720,6 +1031,7 @@ function digAndMoveForward()
 end
 
 function digAndUp()
+  if recall_activated then return false end
   local success, data = turtle.inspectUp()
   if success and data and data.name and ORE_PRIORITY[data.name] then
     state.statistics.ores_found = state.statistics.ores_found + 1
@@ -730,6 +1042,7 @@ function digAndUp()
 end
 
 function digAndDown()
+  if recall_activated then return false end
   local success, data = turtle.inspectDown()
   if success and data and data.name and ORE_PRIORITY[data.name] then
     state.statistics.ores_found = state.statistics.ores_found + 1
@@ -1118,15 +1431,34 @@ function runMining(args)
   
   if not loadState() or #args > 0 then
     if #args == 0 then 
-      print("Usage: miner <width> <length> [strategy] [surface_y]")
+      print("Usage: miner <width> <length> [strategy] [surface_y/dimension] [dimension]")
       print("       miner reset")
+      print("       miner fueltest")
+      print("       miner recalltest")
+      print("       miner dimension <nether|overworld>")
       print("")
       print("Strategies: shaft, branch, hybrid")
-      print("Optional: surface_y - manual surface level override")
+      print("Dimensions: overworld, nether (auto-detected if not specified)")
       print("Examples:")
-      print("  miner 32 64 branch     # Auto-detect surface")
-      print("  miner 32 64 branch 65  # Force surface at Y=65")
-      print("  miner reset            # Clear saved state")
+      print("  miner 32 64 branch                # Auto-detect dimension")
+      print("  miner 32 64 branch nether         # Force Nether mining mode") 
+      print("  miner 32 64 branch 65             # Overworld, surface at Y=65")
+      print("  miner 32 64 branch 65 nether      # Nether, base at Y=65")
+      print("  miner 16 16 branch overworld      # Force Overworld mode")
+      print("  miner dimension nether            # Switch existing save to Nether")
+      print("  miner reset                       # Clear saved state")
+      print("  miner fueltest                    # Debug fuel system")
+      print("  miner recalltest                  # Debug recall system")
+      print("")
+      print("Nether Mode Features:")
+      print("- Optimized Y-levels: 8,10,12,14,16,18,20,22 (Ancient Debris)")
+      print("- Higher levels: 32,48,64,80,96 (general Nether mining)")
+      print("- Ignores: netherrack, basalt, blackstone, soul sand/soil")
+      print("- Targets: ancient debris, nether gold, quartz + modded nether ores")
+      print("\nOverworld Mode Features:")
+      print("- Optimized Y-levels: -54 to -6 (diamonds, deepslate ores)")
+      print("- Ignores: stone, dirt, cobblestone, gravel")
+      print("- Targets: diamonds, emeralds, gold, iron + all modded ores")
       print("\nNote: Turtle requires bucket and fuel to prevent accidental autostart")
       return 
     end
@@ -1154,68 +1486,127 @@ function runMining(args)
   end
   
   comms.init()
-  print("Starting miner. Width: "..state.width..", Length: "..state.length..", Strategy: "..state.strategy)
   
-  -- Find surface if needed - FIXED LOGIC
+  -- Auto-detect dimension if not specified in state
+  if not state.dimension then
+    print("Auto-detecting dimension...")
+    local detected_dimension = detectDimension()
+    state.dimension = detected_dimension
+    
+    -- Update branch levels based on detected dimension
+    if detected_dimension == "nether" then
+      BRANCH_LEVELS = NETHER_BRANCH_LEVELS
+      print("Detected: NETHER - Optimizing for Ancient Debris and Nether ores!")
+    else
+      BRANCH_LEVELS = OVERWORLD_BRANCH_LEVELS  
+      print("Detected: OVERWORLD - Optimizing for Diamonds and standard ores!")
+    end
+    saveState()
+  else
+    -- Use saved dimension setting
+    if state.dimension == "nether" then
+      BRANCH_LEVELS = NETHER_BRANCH_LEVELS
+      print("Resuming NETHER mining - Targeting Ancient Debris and Nether ores!")
+    else
+      BRANCH_LEVELS = OVERWORLD_BRANCH_LEVELS
+      print("Resuming OVERWORLD mining - Targeting Diamonds and standard ores!")
+    end
+  end
+  
+  print("Starting miner. Width: "..state.width..", Length: "..state.length..", Strategy: "..state.strategy..", Dimension: "..state.dimension)
+  
+  -- Find surface if needed - DIMENSION-AWARE LOGIC
   if not state.surfaceY then
     state.task = "FINDING_SURFACE"
-    comms.sendStatus("Finding surface level.")
     
-    -- Check if we're already at a reasonable surface level (Y > 0)
-    if state.y >= 0 then
-      comms.sendStatus("Already above sea level, finding ground...")
+    if state.dimension == "nether" then
+      comms.sendStatus("Finding Nether base level...")
+      print("Nether mining - finding suitable base level...")
       
-      -- Go down to find solid ground
-      local ground_search_attempts = 0
-      while not turtle.detectDown() and ground_search_attempts < 100 do
+      -- In Nether, find a solid platform level
+      -- Go down until we find solid netherrack/basalt, then go up slightly
+      local ground_attempts = 0
+      while not turtle.detectDown() and ground_attempts < 100 and state.y > 8 do
         if not pos_lib.down() then break end
-        ground_search_attempts = ground_search_attempts + 1
+        ground_attempts = ground_attempts + 1
       end
       
-      -- If we found ground, go up one to be on top of it
+      -- Go up a bit to be on a platform
       if turtle.detectDown() then
         pos_lib.up()
+        pos_lib.up() -- Go up 2 blocks for headroom
       end
       
       state.surfaceY = state.y
-      comms.sendStatus("Surface found at Y=" .. state.surfaceY)
+      comms.sendStatus("Nether base level found at Y=" .. state.surfaceY)
+      print("Nether base level set to Y=" .. state.surfaceY)
+      
     else
-      -- We're underground, need to go up first
-      comms.sendStatus("Underground, going up to find surface...")
+      -- Overworld surface detection (existing logic)
+      comms.sendStatus("Finding surface level.")
       
-      -- Go up until we're above sea level or find air
-      local up_attempts = 0
-      while state.y < 0 and up_attempts < 200 do
-        if not turtle.digUp() then
-          if not pos_lib.up() then break end
-        else
-          if not pos_lib.up() then break end
+      -- Check if we're already at a reasonable surface level (Y > 0)
+      if state.y >= 0 then
+        comms.sendStatus("Already above sea level, finding ground...")
+        
+        -- Go down to find solid ground
+        local ground_search_attempts = 0
+        while not turtle.detectDown() and ground_search_attempts < 100 do
+          if not pos_lib.down() then break end
+          ground_search_attempts = ground_search_attempts + 1
         end
-        up_attempts = up_attempts + 1
+        
+        -- If we found ground, go up one to be on top of it
+        if turtle.detectDown() then
+          pos_lib.up()
+        end
+        
+        state.surfaceY = state.y
+        comms.sendStatus("Surface found at Y=" .. state.surfaceY)
+      else
+        -- We're underground, need to go up first
+        comms.sendStatus("Underground, going up to find surface...")
+        
+        -- Go up until we're above sea level or find air
+        local up_attempts = 0
+        while state.y < 0 and up_attempts < 200 do
+          if not turtle.digUp() then
+            if not pos_lib.up() then break end
+          else
+            if not pos_lib.up() then break end
+          end
+          up_attempts = up_attempts + 1
+        end
+        
+        -- Now we should be above ground, find the surface
+        -- Look for solid ground below us
+        local surface_search_attempts = 0
+        while not turtle.detectDown() and surface_search_attempts < 100 do
+          if not pos_lib.down() then break end
+          surface_search_attempts = surface_search_attempts + 1
+        end
+        
+        -- Go up one level to be on top of solid ground
+        if turtle.detectDown() then
+          pos_lib.up()
+        end
+        
+        state.surfaceY = state.y
+        comms.sendStatus("Surface found at Y=" .. state.surfaceY)
       end
-      
-      -- Now we should be above ground, find the surface
-      -- Look for solid ground below us
-      local surface_search_attempts = 0
-      while not turtle.detectDown() and surface_search_attempts < 100 do
-        if not pos_lib.down() then break end
-        surface_search_attempts = surface_search_attempts + 1
-      end
-      
-      -- Go up one level to be on top of solid ground
-      if turtle.detectDown() then
-        pos_lib.up()
-      end
-      
-      state.surfaceY = state.y
-      comms.sendStatus("Surface found at Y=" .. state.surfaceY)
     end
     
-    -- Sanity check - surface should be reasonable
-    if state.surfaceY < -60 then
-      comms.sendStatus("WARNING: Surface seems too low (Y=" .. state.surfaceY .. "). Continuing anyway.")
-    elseif state.surfaceY > 200 then
-      comms.sendStatus("WARNING: Surface seems too high (Y=" .. state.surfaceY .. "). Continuing anyway.")
+    -- Sanity check based on dimension
+    if state.dimension == "nether" then
+      if state.surfaceY < 8 or state.surfaceY > 120 then
+        comms.sendStatus("WARNING: Unusual Nether base level Y=" .. state.surfaceY .. ". Continuing anyway.")
+      end
+    else
+      if state.surfaceY < -60 then
+        comms.sendStatus("WARNING: Surface seems too low (Y=" .. state.surfaceY .. "). Continuing anyway.")
+      elseif state.surfaceY > 200 then
+        comms.sendStatus("WARNING: Surface seems too high (Y=" .. state.surfaceY .. "). Continuing anyway.")
+      end
     end
     
     saveState()
@@ -1232,7 +1623,7 @@ function runMining(args)
 end
 
 function main(args)
-  -- Special reset command to clear bad state
+  -- Special commands
   if args[1] == "reset" then
     if fs.exists(STATE_FILE) then
       fs.delete(STATE_FILE)
@@ -1240,6 +1631,74 @@ function main(args)
     else
       print("No state file found.")
     end
+    return
+  end
+  
+  -- DEBUG: Manual fuel test command
+  if args[1] == "fueltest" then
+    -- Initialize basic state for testing
+    if not state.facing then
+      state = { x = 0, y = 0, z = 0, facing = 0 }
+    end
+    
+    print("=== FUEL SYSTEM TEST ===")
+    print("Current fuel level: " .. turtle.getFuelLevel())
+    print("Turtle facing: " .. state.facing)
+    
+    -- Test fuel chest access
+    print("Testing fuel chest access (west/left)...")
+    pos_lib.turnTo(3) -- Face west
+    turtle.select(FUEL_SLOT)
+    
+    local current_fuel_item = turtle.getItemDetail(FUEL_SLOT)
+    print("Fuel slot before: " .. (current_fuel_item and (current_fuel_item.count .. "x " .. current_fuel_item.name) or "empty"))
+    
+    if turtle.suck() then
+      local item = turtle.getItemDetail(FUEL_SLOT)
+      if item then
+        print("Successfully got: " .. item.count .. "x " .. item.name)
+        if FUEL_TYPES[item.name] then
+          print("This is valid fuel type!")
+          print("Fuel value per item: " .. FUEL_TYPES[item.name])
+          
+          local before = turtle.getFuelLevel()
+          local consumed = turtle.refuel(1) -- Try refueling just 1 item
+          local after = turtle.getFuelLevel()
+          
+          print("Refuel test results:")
+          print("  Before: " .. before)
+          print("  Items consumed: " .. consumed)
+          print("  After: " .. after)
+          print("  Fuel gained: " .. (after - before))
+          
+          if consumed > 0 then
+            print("SUCCESS: Refueling works!")
+          else
+            print("PROBLEM: No items consumed!")
+          end
+        else
+          print("ERROR: Not a recognized fuel type!")
+          print("Available fuel types:")
+          for fuel_name, fuel_value in pairs(FUEL_TYPES) do
+            print("  " .. fuel_name .. " = " .. fuel_value)
+          end
+          print("Putting item back...")
+          turtle.drop()
+        end
+      else
+        print("ERROR: Suck succeeded but got nothing?")
+      end
+    else
+      print("ERROR: Cannot suck from fuel chest!")
+      print("Troubleshooting checklist:")
+      print("1. Is there a chest to the LEFT (west) of turtle?")
+      print("2. Does the chest contain coal or other fuel?")
+      print("3. Is the turtle's fuel slot (slot 1) available?")
+      print("4. Is the turtle facing the correct direction?")
+    end
+    
+    turtle.select(SAFE_SLOT)
+    print("=== TEST COMPLETE ===")
     return
   end
   
@@ -1257,33 +1716,53 @@ function main(args)
   comms.sendStatus(final_message .. " Stats: " .. state.statistics.ores_found .. " ores, " .. 
                   state.statistics.blocks_mined .. " blocks, " .. state.statistics.distance_traveled .. " distance")
   
-  -- FIXED: Always return home first, then do cleanup
+  -- FIXED: Always return home first, then do cleanup (with better recall handling)
   local function returnHomeAndCleanup()
-    -- Return to base regardless of why we stopped
+    -- If recalled, prioritize getting home immediately
+    if recall_activated then
+      comms.sendStatus("RECALL ACTIVATED - Emergency return to base!")
+      print("RECALL RECEIVED - Stopping all operations and returning home...")
+    end
+    
+    -- Return to base regardless of why we stopped (but faster if recalled)
     if state.x ~= 0 or state.y ~= 0 or state.z ~= 0 then
       local return_status = final_message .. " Returning home."
       if recall_activated then
-        return_status = "Recalled - returning to base for inventory dropoff."
+        return_status = "RECALL - Emergency return to base!"
       end
-      pos_lib.goTo(0, 0, 0, return_status)
+      
+      -- Use faster pathfinding for recall
+      if recall_activated then
+        comms.sendStatus(return_status)
+        -- Try direct path home - if it fails, we'll still try the normal goTo
+        if not pos_lib.goTo(0, 0, 0, return_status) then
+          print("Direct path home failed, turtle may be stuck at: " .. state.x .. ", " .. state.y .. ", " .. state.z)
+          comms.sendStatus("RECALL: Turtle stuck at (" .. state.x .. ", " .. state.y .. ", " .. state.z .. ")")
+        end
+      else
+        pos_lib.goTo(0, 0, 0, return_status)
+      end
     end
     
     -- Final dropoff (preserve essential items) - into chest behind robot
-    pos_lib.turnTo(2) -- Face south (behind starting position) toward main chest
-    for i = 2, 16 do
-      local item = turtle.getItemDetail(i)
-      if item and not ESSENTIAL_ITEMS[item.name] and i ~= FUEL_SLOT then
-          turtle.select(i); turtle.drop()
+    if not recall_activated or (state.x == 0 and state.y == 0 and state.z == 0) then
+      pos_lib.turnTo(2) -- Face south (behind starting position) toward main chest
+      for i = 2, 16 do
+        local item = turtle.getItemDetail(i)
+        if item and not ESSENTIAL_ITEMS[item.name] and i ~= FUEL_SLOT then
+            turtle.select(i); turtle.drop()
+        end
       end
+      turtle.select(SAFE_SLOT)
     end
-    turtle.select(SAFE_SLOT)
     
     local final_stats_msg = "Mission complete. Final stats: " .. state.statistics.ores_found .. " ores found, " .. 
                            state.statistics.blocks_mined .. " blocks mined."
     
     if recall_activated then
-      final_stats_msg = "Recall complete. Stats: " .. state.statistics.ores_found .. " ores found, " .. 
+      final_stats_msg = "RECALL COMPLETE. Turtle safely returned. Stats: " .. state.statistics.ores_found .. " ores found, " .. 
                        state.statistics.blocks_mined .. " blocks mined."
+      print("RECALL COMPLETE - Turtle has returned to base and dropped off inventory.")
     end
     
     comms.sendStatus(final_stats_msg)
