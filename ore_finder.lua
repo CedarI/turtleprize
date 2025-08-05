@@ -60,9 +60,8 @@ end---------------------------------------------------------------------
 ---------------------------------------------------------------------
 
 -- CONFIGURATION
-local SCAN_RADIUS = 8 -- Very small radius to avoid false positives
 local REFRESH_RATE = 3 -- Seconds between automatic scans
-local VERSION = "1.2-fixed"
+local VERSION = "1.3-fixed-api"
 
 -- Check for geo scanner - simplified approach since we know it's on "back"
 local geo = nil
@@ -278,10 +277,11 @@ local function updatePlayerPosition()
     -- Try GPS if available (completely optional)
     local has_gps = false
     if gps and gps.locate then
-        local x, y, z = gps.locate(2) -- 2 second timeout
+        local x, y, z = gps.locate(1) -- 1 second timeout
         if x and y and z then
             player_pos = {x = x, y = y, z = z}
             has_gps = true
+            print("DEBUG: Using GPS position: " .. x .. ", " .. y .. ", " .. z)
         end
     end
     
@@ -289,6 +289,7 @@ local function updatePlayerPosition()
     -- The geo scanner works with relative coordinates anyway
     if not has_gps then
         player_pos = {x = 0, y = 0, z = 0}
+        print("DEBUG: Using relative position: 0, 0, 0")
     end
     
     return true -- Always return true since relative positioning always works
@@ -322,46 +323,56 @@ local function calculateDirection(dx, dz)
     end
 end
 
--- SCANNING FUNCTIONS (Fixed to avoid false positives)
+-- SCANNING FUNCTIONS (Fixed to use correct geo scanner API)
 local function scanForOres(ore_blocks)
     -- Always update position
     updatePlayerPosition()
     
-    local results = {}
-    local total_scanned = 0
+    print("DEBUG: Player position: " .. player_pos.x .. ", " .. player_pos.y .. ", " .. player_pos.z)
+    print("DEBUG: Scanning all blocks...")
     
-    -- Scan for each block type with validation
+    -- Use the correct API - scan all blocks at once
+    local all_blocks = geoscanner.scan()
+    
+    if not all_blocks then
+        print("DEBUG: geoscanner.scan() returned nil")
+        return {}
+    end
+    
+    print("DEBUG: Scanner returned " .. #all_blocks .. " total blocks")
+    
+    local results = {}
+    
+    -- Create a lookup table for faster ore checking
+    local ore_lookup = {}
     for _, block_name in ipairs(ore_blocks) do
-        local blocks = geo.scan(SCAN_RADIUS, block_name)
-        
-        if blocks and type(blocks) == "table" and #blocks > 0 then
-            for _, block in ipairs(blocks) do
-                -- Validate block data
-                if block and block.x and block.y and block.z then
-                    local distance = calculateDistance(
-                        player_pos.x, player_pos.y, player_pos.z,
-                        block.x, block.y, block.z
-                    )
-                    
-                    -- Only include blocks that are actually within our scan radius
-                    -- and not too close (might be false positives)
-                    if distance <= SCAN_RADIUS and distance >= 1 then
-                        table.insert(results, {
-                            x = block.x,
-                            y = block.y, 
-                            z = block.z,
-                            distance = distance,
-                            block_name = block_name
-                        })
-                    end
-                end
-            end
+        ore_lookup[block_name] = true
+    end
+    
+    -- Filter for the ores we want
+    for i, block_data in ipairs(all_blocks) do
+        if block_data and block_data.name and ore_lookup[block_data.name] then
+            print("DEBUG: Found " .. block_data.name .. " at " .. block_data.x .. ", " .. block_data.y .. ", " .. block_data.z)
+            
+            local distance = calculateDistance(
+                player_pos.x, player_pos.y, player_pos.z,
+                block_data.x, block_data.y, block_data.z
+            )
+            
+            table.insert(results, {
+                x = block_data.x,
+                y = block_data.y, 
+                z = block_data.z,
+                distance = distance,
+                block_name = block_data.name
+            })
         end
-        total_scanned = total_scanned + 1
     end
     
     -- Sort by distance
     table.sort(results, function(a, b) return a.distance < b.distance end)
+    
+    print("DEBUG: Found " .. #results .. " matching ore blocks")
     
     return results
 end
@@ -387,8 +398,6 @@ local function drawMainMenu()
     
     term.setCursorPos(1, y + 1)
     term.write("Enter number (1-" .. (#ORE_CATEGORIES) .. ") or 'q' to quit:")
-    term.setCursorPos(1, y + 3)
-    term.write("Note: Using " .. SCAN_RADIUS .. " block radius to reduce false positives")
 end
 
 local function drawOreMenu()
@@ -421,57 +430,57 @@ local function drawScanResults()
     
     term.setCursorPos(1, 4)
     term.setTextColor(selected_category.color)
-    term.write("Scanning: " .. selected_ore.name .. " (radius: " .. SCAN_RADIUS .. ")")
+    term.write("Scanning: " .. selected_ore.name)
     term.setTextColor(colors.white)
     
+    -- Debug info
+    term.setCursorPos(1, 5)
+    term.write("DEBUG: Player at " .. player_pos.x .. ", " .. player_pos.y .. ", " .. player_pos.z)
+    
     if #last_scan_results == 0 then
-        term.setCursorPos(1, 6)
+        term.setCursorPos(1, 7)
         term.write("No " .. selected_ore.name .. " found nearby")
-        term.setCursorPos(1, 8)
-        term.write("Try moving to a different area or")
         term.setCursorPos(1, 9)
-        term.write("increase scan radius in the code")
+        term.write("Try moving to a different area")
     else
         local closest = last_scan_results[1]
+        
+        -- Debug raw coordinates
+        term.setCursorPos(1, 7)
+        term.write("DEBUG: Ore at " .. closest.x .. ", " .. closest.y .. ", " .. closest.z)
+        
         local dx = closest.x - player_pos.x
         local dz = closest.z - player_pos.z
+        
+        term.setCursorPos(1, 8)
+        term.write("DEBUG: dx=" .. dx .. ", dz=" .. dz)
+        
         local direction = calculateDirection(dx, dz)
         
         -- Show ore info
-        term.setCursorPos(1, 6)
+        term.setCursorPos(1, 10)
         term.write("Found " .. #last_scan_results .. " deposit(s)")
         
-        term.setCursorPos(1, 8)
+        term.setCursorPos(1, 12)
         term.write("CLOSEST:")
         
         -- Show direction with bigger, clearer arrow
-        term.setCursorPos(1, 10)
+        term.setCursorPos(1, 14)
         term.write("Direction: " .. direction.name)
         
-        term.setCursorPos(1, 11)
+        term.setCursorPos(1, 15)
         term.setTextColor(colors.lime)
         term.write("Arrow: " .. direction.arrow .. " " .. direction.arrow .. " " .. direction.arrow)
         term.setTextColor(colors.white)
         
-        term.setCursorPos(1, 13)
+        term.setCursorPos(1, 17)
         term.write("Distance: " .. math.floor(closest.distance) .. " blocks")
         
-        term.setCursorPos(1, 14)
+        term.setCursorPos(1, 18)
         term.write("Y-Level: " .. closest.y)
         
-        term.setCursorPos(1, 15)
+        term.setCursorPos(1, 19)
         term.write("Block: " .. closest.block_name)
-        
-        -- Show other results
-        if #last_scan_results > 1 then
-            term.setCursorPos(1, 17)
-            term.write("Other deposits:")
-            for i = 2, math.min(3, #last_scan_results) do
-                local ore = last_scan_results[i]
-                term.setCursorPos(3, 16 + i)
-                term.write(math.floor(ore.distance) .. " blocks away (Y=" .. ore.y .. ")")
-            end
-        end
     end
     
     local w, h = term.getSize()
