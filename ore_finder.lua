@@ -1,13 +1,13 @@
 ---------------------------------------------------------------------
 -- ATM10 ORE FINDER - Advanced Pocket Computer Geo Scanner App
--- v2.8-final-fix - By CedarI, cleanup by Gemini
+-- v2.9-final - By CedarI, cleanup by Gemini
 ---------------------------------------------------------------------
 
 -- CONFIGURATION
 local SCAN_RADIUS = 16
 local GPS_UPDATE_RATE = 0.5
 local SCANNER_UPDATE_RATE = 2.0
-local VERSION = "2.8-final-fix"
+local VERSION = "2.9-final"
 local W, H = 26, 20 -- Advanced Pocket Computer Screen Size
 
 ---------------------------------------------------------------------
@@ -36,21 +36,26 @@ if not (geoscanner and geoscanner.scan) then
 end
 print("Geo scanner ready.")
 
--- *** ROBUST GPS CHECK ***
+-- *** ROBUST NON-BLOCKING GPS CHECK ***
 local has_gps = false
 print("Checking for active GPS...")
 if gps and gps.locate then
-    -- Perform a timed call to gps.locate to prevent hangs
-    local timer = os.startTimer(0.1)
-    local event, p1, p2, p3, p4 = os.pullEvent()
-    if event == "gps_locate" then
-        has_gps = true
-        print("GPS system detected.")
-    else
-        print("No active GPS modem found.")
-    end
+    -- Run a short, timed check in parallel to prevent the program from hanging.
+    parallel.waitForAny(
+            function()
+                local x, _, _ = gps.locate()
+                if x then has_gps = true end
+            end,
+            function()
+                os.sleep(0.2)
+            end
+    )
+end
+
+if has_gps then
+    print("GPS system detected.")
 else
-    print("No GPS API available.")
+    print("No active GPS modem found.")
 end
 os.sleep(1.5)
 
@@ -128,8 +133,7 @@ local function drawScanResults()
         term.setCursorPos(1, 7); term.write("Closest:")
         term.setCursorPos(3, 8); term.write("Dist: " .. string.format("%.1f", c.dist) .. "m | Y: " .. tostring(c.y or "?"))
     end
-    local prompt = has_gps and "'t' to track" or "No GPS to track"
-    term.setCursorPos(1, H); term.write("Press "..prompt..", 'r', 'b'")
+    term.setCursorPos(1, H); term.write("'t' track, 'r' rescan, 'b' back")
 end
 
 local function updateTrackingScreen(dist, dx, dz, dy)
@@ -193,7 +197,7 @@ local function mainLoop()
         elseif state.current_menu == "scanning" then
             if key == "b" then state.current_menu="ore_select"; drawOreMenu()
             elseif key == "r" then performScan(false)
-            elseif key == "t" and #state.last_scan_results > 0 and has_gps then
+            elseif key == "t" and #state.last_scan_results > 0 then
                 state.target_ore={name=state.selected_ore.name, block_name=state.last_scan_results[1].name, abs=state.last_scan_results[1].abs}; state.current_menu="tracking"; break
             end
         end
