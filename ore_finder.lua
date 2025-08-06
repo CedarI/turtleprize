@@ -44,7 +44,7 @@ local function safeLocate()
         state.has_fix = false
         return
     end
-    -- timeout of 5 seconds to avoid hanging
+    -- timeout of 5 seconds so it doesn't block indefinitely
     local x, y, z = gps.locate(5)
     if x then
         state.player_pos = {x = x, y = y, z = z}
@@ -155,7 +155,16 @@ local function drawScanResults()
         term.setCursorPos(1, 7); term.write("Closest:")
         term.setCursorPos(3, 8); term.write("Dist: " .. string.format("%.1f", c.dist) .. "m | Y: " .. tostring(c.y or "?"))
     end
-    local prompt = USE_GPS and (state.has_fix and "'t' to track" or "Waiting for GPS fix") or "No GPS to track"
+    local prompt
+    if USE_GPS then
+        if state.has_fix then
+            prompt = "'t' to track"
+        else
+            prompt = "Waiting for GPS fix"
+        end
+    else
+        prompt = "No GPS to track"
+    end
     term.setCursorPos(1, H); term.write("Press " .. prompt .. ", 'r', 'b'")
 end
 
@@ -314,4 +323,3 @@ end
 
 clearScreen()
 print("Thanks for using ATM10 Ore Finder!")
-
