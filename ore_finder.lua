@@ -1,12 +1,13 @@
 ---------------------------------------------------------------------
 -- ATM10 ORE FINDER - Advanced Pocket Computer Geo Scanner App
--- v3.2-startup-fix - By CedarI, cleanup by Gemini
+-- v3.3-complete - By CedarI, cleanup by Gemini
 ---------------------------------------------------------------------
 
 -- CONFIGURATION
 local SCAN_RADIUS = 16
 local TRACKING_UPDATE_RATE = 0.5
-local VERSION = "3.2-startup-fix"
+local SCANNER_UPDATE_RATE = 2.0
+local VERSION = "3.3-complete"
 
 -- *** SET TO true IF YOU HAVE AN ACTIVE GPS SATELLITE CLUSTER ***
 local USE_GPS = false
@@ -46,12 +47,11 @@ else
     print("GPS mode disabled in config.")
 end
 
--- *** NEW: Interactive start to prevent freezing ***
 print("\nPress any key to start.")
-os.pullEvent("key") -- Waits for a single key press and consumes the event.
+os.pullEvent("key")
 
 ---------------------------------------------------------------------
--- ORE DEFINITIONS
+-- ORE DEFINITIONS (Full List Restored)
 ---------------------------------------------------------------------
 local ORE_CATEGORIES = {
     { name = "ATM Special Ores", color = colors.purple, ores = {
@@ -63,16 +63,31 @@ local ORE_CATEGORIES = {
             {name = "Diamond", blocks = {"minecraft:diamond_ore", "minecraft:deepslate_diamond_ore"}},
             {name = "Emerald", blocks = {"minecraft:emerald_ore", "minecraft:deepslate_emerald_ore"}},
             {name = "Ancient Debris", blocks = {"minecraft:ancient_debris"}},
+            {name = "Gold", blocks = {"minecraft:gold_ore", "minecraft:deepslate_gold_ore", "minecraft:nether_gold_ore"}},
     }},
     { name = "Technology Ores", color = colors.cyan, ores = {
-            {name = "Certus Quartz", blocks = {"ae2:certus_quartz_ore"}},
-            {name = "Osmium", blocks = {"mekanism:osmium_ore"}},
-            {name = "Uranium", blocks = {"mekanism:uranium_ore"}},
+            {name = "Certus Quartz", blocks = {"ae2:certus_quartz_ore", "ae2:deepslate_certus_quartz_ore"}},
+            {name = "Osmium", blocks = {"mekanism:osmium_ore", "mekanism:deepslate_osmium_ore"}},
+            {name = "Uranium", blocks = {"mekanism:uranium_ore", "mekanism:deepslate_uranium_ore"}},
+            {name = "Zinc", blocks = {"create:zinc_ore", "create:deepslate_zinc_ore"}},
+    }},
+    { name = "Industrial Ores", color = colors.orange, ores = {
+            {name = "Tin", blocks = {"thermal:tin_ore", "thermal:deepslate_tin_ore", "mekanism:tin_ore"}},
+            {name = "Lead", blocks = {"thermal:lead_ore", "thermal:deepslate_lead_ore", "mekanism:lead_ore"}},
+            {name = "Silver", blocks = {"thermal:silver_ore", "thermal:deepslate_silver_ore"}},
+            {name = "Nickel", blocks = {"thermal:nickel_ore", "thermal:deepslate_nickel_ore"}},
     }},
     { name = "Common Ores", color = colors.lightGray, ores = {
-            {name = "Iron", blocks = {"minecraft:iron_ore"}},
-            {name = "Coal", blocks = {"minecraft:coal_ore"}},
+            {name = "Iron", blocks = {"minecraft:iron_ore", "minecraft:deepslate_iron_ore"}},
+            {name = "Copper", blocks = {"minecraft:copper_ore", "minecraft:deepslate_copper_ore"}},
+            {name = "Coal", blocks = {"minecraft:coal_ore", "minecraft:deepslate_coal_ore"}},
+            {name = "Redstone", blocks = {"minecraft:redstone_ore", "minecraft:deepslate_redstone_ore"}},
     }},
+    { name = "Nether Ores", color = colors.red, ores = {
+            {name = "Ancient Debris", blocks = {"minecraft:ancient_debris"}},
+            {name = "Nether Quartz", blocks = {"minecraft:nether_quartz_ore"}},
+            {name = "Nether Gold", blocks = {"minecraft:nether_gold_ore"}},
+    }}
 }
 
 ---------------------------------------------------------------------
@@ -123,8 +138,7 @@ local function drawScanResults()
         term.setCursorPos(1, 7); term.write("Closest:")
         term.setCursorPos(3, 8); term.write("Dist: " .. string.format("%.1f", c.dist) .. "m | Y: " .. tostring(c.y or "?"))
     end
-    local prompt = USE_GPS and "'t' to track" or "No GPS to track"
-    term.setCursorPos(1, H); term.write("Press "..prompt..", 'r', 'b'")
+    term.setCursorPos(1, H); term.write("'t' track, 'r' rescan, 'b' back")
 end
 
 local function updateTrackingScreen(dist, dx, dz, dy)
@@ -172,10 +186,9 @@ local function performScan(is_silent)
     if not is_silent then drawScanResults() end
 end
 
--- *** REWRITTEN MAIN LOOP TO PREVENT FREEZING ***
 local function mainLoop()
     while true do
-        local event, p1 = os.pullEvent() -- Pull ANY event
+        local event, p1 = os.pullEvent()
         if event == "char" then
             local key = p1
             if key == "q" then state.current_menu = "quit"; break end
@@ -190,7 +203,7 @@ local function mainLoop()
             elseif state.current_menu == "scanning" then
                 if key == "b" then state.current_menu="ore_select"; drawOreMenu()
                 elseif key == "r" then performScan(false)
-                elseif key == "t" and #state.last_scan_results > 0 and USE_GPS then
+                elseif key == "t" and #state.last_scan_results > 0 then
                     state.target_ore={name=state.selected_ore.name, block_name=state.last_scan_results[1].name, abs=state.last_scan_results[1].abs}; state.current_menu="tracking"; break
                 end
             end
@@ -201,20 +214,31 @@ end
 
 local function trackingLoop()
     drawHeader("Live Tracker")
+    local update_rate = USE_GPS and GPS_UPDATE_RATE or SCANNER_UPDATE_RATE
     local timer = os.startTimer(0)
+    local target_lost = false
 
     local function update()
-        updatePlayerPosition()
-        local t = state.target_ore.abs
-        local dx, dy, dz = t.x-state.player_pos.x, t.y-state.player_pos.y, t.z-state.player_pos.z
-        updateTrackingScreen(math.sqrt(dx^2+dy^2+dz^2), dx, dz, dy)
+        if USE_GPS then
+            updatePlayerPosition()
+            local t = state.target_ore.abs
+            local dx, dy, dz = t.x-state.player_pos.x, t.y-state.player_pos.y, t.z-state.player_pos.z
+            updateTrackingScreen(math.sqrt(dx^2+dy^2+dz^2), dx, dz, dy)
+        else
+            performScan(true)
+            if #state.last_scan_results > 0 then
+                target_lost=false; local c=state.last_scan_results[1]; updateTrackingScreen(c.dist, c.x, c.z, c.y)
+            elseif not target_lost then
+                target_lost=true; term.setCursorPos(1,9); term.setTextColor(colors.red); term.write("Target lost!")
+            end
+        end
     end
 
     while true do
         local event, p1 = os.pullEvent()
         if event == "timer" and p1 == timer then
             update()
-            timer = os.startTimer(TRACKING_UPDATE_RATE)
+            timer = os.startTimer(update_rate)
         elseif event == "char" and (p1 == "b" or p1 == "q") then
             state.current_menu = "scanning"; drawScanResults(); break
         end
@@ -222,7 +246,6 @@ local function trackingLoop()
 end
 
 -- MAIN PROGRAM
-drawMainMenu()
 while state.current_menu ~= "quit" do
     if state.current_menu == "tracking" then trackingLoop()
     else mainLoop() end
