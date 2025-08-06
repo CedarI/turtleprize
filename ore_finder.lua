@@ -6,7 +6,7 @@
 -- CONFIGURATION
 local SCAN_RADIUS = 16
 local TRACKING_UPDATE_RATE = 0.5
-local VERSION = "3.0-final"
+local VERSION = "3.1-final"
 
 -- *** SET TO true IF YOU HAVE AN ACTIVE GPS SATELLITE CLUSTER ***
 local USE_GPS = false
