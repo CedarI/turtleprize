@@ -1,22 +1,19 @@
 ---------------------------------------------------------------------
 -- ATM10 ORE FINDER - Advanced Pocket Computer Geo Scanner App
--- v2.7-final - By CedarI, cleanup by Gemini
+-- v2.8-final-fix - By CedarI, cleanup by Gemini
 ---------------------------------------------------------------------
 
 -- CONFIGURATION
 local SCAN_RADIUS = 16
 local GPS_UPDATE_RATE = 0.5
 local SCANNER_UPDATE_RATE = 2.0
-local VERSION = "2.7-final"
-
--- CONSTANTS for Advanced Pocket Computer Screen Size
-local W, H = 26, 20
+local VERSION = "2.8-final-fix"
+local W, H = 26, 20 -- Advanced Pocket Computer Screen Size
 
 ---------------------------------------------------------------------
 -- INITIALIZE PERIPHERALS
 ---------------------------------------------------------------------
 term.clear(); term.setCursorPos(1,1)
-term.setPaletteColor(colors.black, 0.1, 0.1, 0.1) -- Darker background
 term.setBackgroundColor(colors.black)
 term.setTextColor(colors.white)
 
@@ -39,10 +36,24 @@ if not (geoscanner and geoscanner.scan) then
 end
 print("Geo scanner ready.")
 
-local has_gps = gps and gps.locate
-if has_gps then print("GPS system detected.")
-else print("Warning: No GPS.") end
+-- *** ROBUST GPS CHECK ***
+local has_gps = false
+print("Checking for active GPS...")
+if gps and gps.locate then
+    -- Perform a timed call to gps.locate to prevent hangs
+    local timer = os.startTimer(0.1)
+    local event, p1, p2, p3, p4 = os.pullEvent()
+    if event == "gps_locate" then
+        has_gps = true
+        print("GPS system detected.")
+    else
+        print("No active GPS modem found.")
+    end
+else
+    print("No GPS API available.")
+end
 os.sleep(1.5)
+
 
 ---------------------------------------------------------------------
 -- ORE DEFINITIONS
@@ -70,22 +81,17 @@ local ORE_CATEGORIES = {
 }
 
 ---------------------------------------------------------------------
--- GLOBAL STATE
+-- GLOBAL STATE & UTILITIES
 ---------------------------------------------------------------------
 local state = {
     current_menu = "main", selected_category = nil, selected_ore = nil,
     last_scan_results = {}, player_pos = {x=0, y=0, z=0}, target_ore = nil
 }
 
----------------------------------------------------------------------
--- UTILITIES & UI FUNCTIONS
----------------------------------------------------------------------
 local function clearScreen() term.clear(); term.setCursorPos(1, 1) end
 local function drawHeader(title)
-    clearScreen()
-    local x = math.floor((W - #title) / 2) + 1
-    term.setCursorPos(x, 1); term.write(title)
-    term.setCursorPos(1, 2); term.write(string.rep("-", W-1))
+    clearScreen(); local x = math.floor((W - #title) / 2) + 1
+    term.setCursorPos(x, 1); term.write(title); term.setCursorPos(1, 2); term.write(string.rep("-", W-1))
 end
 
 local function updatePlayerPosition()
@@ -95,6 +101,9 @@ local function updatePlayerPosition()
     end
 end
 
+---------------------------------------------------------------------
+-- UI DRAWING FUNCTIONS
+---------------------------------------------------------------------
 local function drawMainMenu()
     drawHeader("Ore Finder - Main Menu")
     term.setCursorPos(1, 4); term.write("Select ore category:")
@@ -117,16 +126,17 @@ local function drawScanResults()
         local c = state.last_scan_results[1]
         term.setCursorPos(1, 5); term.write("Found " .. #state.last_scan_results .. " deposit(s).")
         term.setCursorPos(1, 7); term.write("Closest:")
-        term.setCursorPos(3, 8, "Dist: " .. string.format("%.1f", c.distance) .. "m | Y: " .. tostring(c.y or "?"))
+        term.setCursorPos(3, 8); term.write("Dist: " .. string.format("%.1f", c.dist) .. "m | Y: " .. tostring(c.y or "?"))
     end
-    term.setCursorPos(1, H); term.write("'t' track, 'r' rescan, 'b' back")
+    local prompt = has_gps and "'t' to track" or "No GPS to track"
+    term.setCursorPos(1, H); term.write("Press "..prompt..", 'r', 'b'")
 end
 
 local function updateTrackingScreen(dist, dx, dz, dy)
     for y = 4, H - 2 do term.setCursorPos(1, y); term.write(string.rep(" ", W)) end
 
     local mode = has_gps and "(GPS)" or "(Scanner)"
-    term.setCursorPos(1, 4); term.write("Tracking: " .. state.target_ore.block_name .. " " .. mode)
+    term.setCursorPos(1, 4); term.write("Tracking: " .. state.target_ore.name .. " " .. mode)
     term.setCursorPos(1, 6); term.write(string.format("Dist: %.1fm", dist))
     term.setCursorPos(1, 7); term.write(string.format("X:%+.1f Y:%+.1f Z:%+.1f", dx, dy, dz))
 
@@ -183,7 +193,7 @@ local function mainLoop()
         elseif state.current_menu == "scanning" then
             if key == "b" then state.current_menu="ore_select"; drawOreMenu()
             elseif key == "r" then performScan(false)
-            elseif key == "t" and #state.last_scan_results > 0 then
+            elseif key == "t" and #state.last_scan_results > 0 and has_gps then
                 state.target_ore={name=state.selected_ore.name, block_name=state.last_scan_results[1].name, abs=state.last_scan_results[1].abs}; state.current_menu="tracking"; break
             end
         end
@@ -206,11 +216,9 @@ local function trackingLoop()
         else
             performScan(true)
             if #state.last_scan_results > 0 then
-                target_lost = false
-                local c = state.last_scan_results[1]
-                updateTrackingScreen(c.dist, c.x, c.z, c.y)
+                target_lost=false; local c=state.last_scan_results[1]; updateTrackingScreen(c.dist, c.x, c.z, c.y)
             elseif not target_lost then
-                target_lost=true; term.setCursorPos(1, 9); term.setTextColor(colors.red); term.write("Target lost!")
+                target_lost=true; term.setCursorPos(1,9); term.setTextColor(colors.red); term.write("Target lost!")
             end
         end
     end
