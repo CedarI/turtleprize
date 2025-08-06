@@ -1,13 +1,13 @@
 ---------------------------------------------------------------------
 -- ATM10 ORE FINDER - Advanced Pocket Computer Geo Scanner App
--- v2.3-final - By CedarI, cleanup by Gemini
+-- v2.4-tracking-fixed - By CedarI, cleanup by Gemini
 ---------------------------------------------------------------------
 
 -- CONFIGURATION
 local SCAN_RADIUS = 16
 local GPS_UPDATE_RATE = 0.5      -- Faster updates for smooth GPS tracking
 local SCANNER_UPDATE_RATE = 2.0  -- Slower updates for rescan mode
-local VERSION = "2.3-final"
+local VERSION = "2.4-tracking-fixed"
 
 ---------------------------------------------------------------------
 -- INITIALIZE PERIPHERALS
@@ -144,7 +144,7 @@ local function updateTrackingScreen(dist, dir_x, dir_z, dir_y)
         term.setCursorPos(arrow_x + 1, arrow_y + 1); term.write(" [HERE] ")
     else
         term.setTextColor(colors.yellow)
-        if math.abs(dir_z) > math.abs(dir_x) then -- North/South dominant
+        if math.abs(dir_z) > math.abs(dir_x) then -- North/South is dominant
             if dir_z < 0 then -- North
                 term.setCursorPos(arrow_x+2, arrow_y+0); term.write(" ^ ")
                 term.setCursorPos(arrow_x+1, arrow_y+1); term.write("/_\\")
@@ -196,71 +196,4 @@ local function mainLoop()
         if state.current_menu == "main" then
             local choice = tonumber(key)
             if choice and choice >= 1 and choice <= #ORE_CATEGORIES then
-                state.selected_category = ORE_CATEGORIES[choice]; state.current_menu = "ore_select"; drawOreMenu()
-            end
-        elseif state.current_menu == "ore_select" then
-            if key == "b" then state.current_menu = "main"; drawMainMenu(); goto continue end
-            local choice = tonumber(key)
-            if choice and choice >= 1 and choice <= #state.selected_category.ores then
-                state.selected_ore = state.selected_category.ores[choice]; state.current_menu = "scanning"; performScan(false)
-            end
-        elseif state.current_menu == "scanning" then
-            if key == "b" then state.current_menu = "ore_select"; drawOreMenu()
-            elseif key == "r" then performScan(false)
-            elseif key == "t" and #state.last_scan_results > 0 then
-                state.target_ore = state.last_scan_results[1]; state.current_menu = "tracking"; break
-            end
-        end
-        ::continue::
-    end
-end
-
-local function trackingLoop()
-    drawHeader("Live Tracking Mode")
-    local _, h = term.getSize(); term.setCursorPos(1, h); term.write("Press 'b' or 'q' to stop tracking.")
-    local update_rate = has_gps and GPS_UPDATE_RATE or SCANNER_UPDATE_RATE
-
-    local function updateTracker()
-        if has_gps then
-            updatePlayerPosition()
-            local target_pos = state.target_ore.abs_pos
-            local dir_x = target_pos.x - state.player_pos.x
-            local dir_y = target_pos.y - state.player_pos.y
-            local dir_z = target_pos.z - state.player_pos.z
-            local dist = math.sqrt(dir_x^2 + dir_y^2 + dir_z^2)
-            updateTrackingScreen(dist, dir_x, dir_z, dir_y)
-        else -- Non-GPS rescanning mode
-            performScan(true) -- This is a silent scan to get new relative data
-            if #state.last_scan_results > 0 then
-                local new_closest = state.last_scan_results[1]
-                state.target_ore = new_closest -- Update the target with new relative data
-                updateTrackingScreen(new_closest.distance, new_closest.x, new_closest.z, new_closest.y)
-            else
-                term.setCursorPos(1, 8); term.setTextColor(colors.red); term.write("Target lost!")
-            end
-        end
-    end
-
-    updateTracker() -- Initial draw
-    local timer = os.startTimer(update_rate)
-
-    while state.current_menu == "tracking" do
-        local event, p1 = os.pullEvent()
-        if (event == "char" and (p1 == "b" or p1 == "q")) then
-            state.current_menu = "scanning"; drawScanResults(); break
-        elseif event == "timer" and p1 == timer then
-            local ok, err = pcall(updateTracker)
-            if not ok then print("Tracker error: "..tostring(err)) end
-            timer = os.startTimer(update_rate)
-        end
-    end
-end
-
--- MAIN PROGRAM EXECUTION
-drawMainMenu()
-while state.current_menu ~= "quit" do
-    if state.current_menu == "tracking" then trackingLoop()
-    else mainLoop() end
-end
-
-clearScreen(); print("Thanks for using ATM10 Ore Finder!")
+                state.selected_category = ORE_CATEGORIES[choice]; state.current_menu = "ore
