@@ -144,7 +144,7 @@ local function updateTrackingScreen(dist, dir_x, dir_z, dir_y)
         term.setCursorPos(arrow_x + 1, arrow_y + 1); term.write(" [HERE] ")
     else
         term.setTextColor(colors.yellow)
-        if math.abs(dir_z) > math.abs(dir_x) then -- North/South is dominant
+        if math.abs(dir_z) > math.abs(dir_x) then
             if dir_z < 0 then -- North
                 term.setCursorPos(arrow_x+2, arrow_y+0); term.write(" ^ ")
                 term.setCursorPos(arrow_x+1, arrow_y+1); term.write("/_\\")
@@ -152,7 +152,7 @@ local function updateTrackingScreen(dist, dir_x, dir_z, dir_y)
                 term.setCursorPos(arrow_x+1, arrow_y+0); term.write("\\_/")
                 term.setCursorPos(arrow_x+2, arrow_y+1); term.write(" v ")
             end
-        else -- East/West is dominant
+        else
             if dir_x < 0 then -- West
                 term.setCursorPos(arrow_x+0, arrow_y+0); term.write(" <' ")
                 term.setCursorPos(arrow_x+0, arrow_y+1); term.write(" <. ")
@@ -221,8 +221,21 @@ local function trackingLoop()
 
     local update_rate = has_gps and GPS_UPDATE_RATE or SCANNER_UPDATE_RATE
     local target_lost = false
+    local timer = os.startTimer(0) -- Start timer to fire immediately for the first draw
 
-    local function updateTracker()
+    while state.current_menu == "tracking" do
+        local event, p1 = os.pullEvent("timer")
+        if p1 ~= timer then -- If it's not our timer, ignore it and wait again
+            goto continue
+        end
+
+        -- Check for key presses without blocking the timer
+        local key_event, key_char = os.pullEventRaw(0)
+        if key_event == "char" and (key_char == "b" or key_char == "q") then
+            state.current_menu = "scanning"; drawScanResults(); break
+        end
+
+        -- Update logic
         if has_gps then
             updatePlayerPosition()
             local target_pos = state.target_ore.abs_pos
@@ -231,42 +244,20 @@ local function trackingLoop()
             local dir_z = target_pos.z - state.player_pos.z
             local dist = math.sqrt(dir_x^2 + dir_y^2 + dir_z^2)
             updateTrackingScreen(dist, dir_x, dir_z, dir_y)
-        else
-            performScan(true) -- Silent scan for non-GPS mode
+        else -- Non-GPS rescanning mode
+            performScan(true) -- Do a silent scan
             if #state.last_scan_results > 0 then
                 target_lost = false
                 local new_closest = state.last_scan_results[1]
-                -- Re-assign target_ore to keep its block_name for the header
-                state.target_ore.distance, state.target_ore.x, state.target_ore.y, state.target_ore.z = new_closest.distance, new_closest.x, new_closest.y, new_closest.z
                 updateTrackingScreen(new_closest.distance, new_closest.x, new_closest.z, new_closest.y)
             elseif not target_lost then
                 target_lost = true
                 term.setCursorPos(1, 8); term.setTextColor(colors.red); term.write("Target lost!")
             end
         end
-    end
 
-    -- Initial draw before starting the timer loop
-    updateTracker()
-
-    local timer = os.startTimer(update_rate)
-
-    while state.current_menu == "tracking" do
-        local event, p1 = os.pullEvent()
-        if event == "char" and (p1 == "b" or p1 == "q") then
-            state.current_menu = "scanning"; drawScanResults(); break
-        elseif event == "timer" and p1 == timer then
-            local ok, err = pcall(updateTracker)
-            if not ok then
-                -- On error, stop tracking to avoid a crash loop
-                state.current_menu = "scanning"
-                drawScanResults()
-                term.setCursorPos(1, term.getSize())
-                print("Tracking error: " .. tostring(err))
-                break
-            end
-            timer = os.startTimer(update_rate)
-        end
+        timer = os.startTimer(update_rate) -- Set the next timer
+        ::continue::
     end
 end
 
