@@ -1,13 +1,13 @@
 ---------------------------------------------------------------------
 -- ATM10 ORE FINDER - Advanced Pocket Computer Geo Scanner App
--- v2.5-final-fix - By CedarI, cleanup by Gemini
+-- v2.6-final-fix - By CedarI, cleanup by Gemini
 ---------------------------------------------------------------------
 
 -- CONFIGURATION
 local SCAN_RADIUS = 16
 local GPS_UPDATE_RATE = 0.5      -- Seconds between smooth GPS tracking updates
 local SCANNER_UPDATE_RATE = 2.0  -- Seconds between non-GPS re-scans
-local VERSION = "2.5-final-fix"
+local VERSION = "2.6-final-fix"
 
 ---------------------------------------------------------------------
 -- INITIALIZE PERIPHERALS
@@ -215,27 +215,16 @@ local function mainLoop()
     end
 end
 
+-- *** REWRITTEN TRACKING LOOP ***
 local function trackingLoop()
     drawHeader("Live Tracking Mode")
     local _, h = term.getSize(); term.setCursorPos(1, h); term.write("Press 'b' or 'q' to stop tracking.")
 
     local update_rate = has_gps and GPS_UPDATE_RATE or SCANNER_UPDATE_RATE
-    local target_lost = false
     local timer = os.startTimer(0) -- Start timer to fire immediately for the first draw
+    local target_lost = false
 
-    while state.current_menu == "tracking" do
-        local event, p1 = os.pullEvent("timer")
-        if p1 ~= timer then -- If it's not our timer, ignore it and wait again
-            goto continue
-        end
-
-        -- Check for key presses without blocking the timer
-        local key_event, key_char = os.pullEventRaw(0)
-        if key_event == "char" and (key_char == "b" or key_char == "q") then
-            state.current_menu = "scanning"; drawScanResults(); break
-        end
-
-        -- Update logic
+    local function updateTracker()
         if has_gps then
             updatePlayerPosition()
             local target_pos = state.target_ore.abs_pos
@@ -244,8 +233,8 @@ local function trackingLoop()
             local dir_z = target_pos.z - state.player_pos.z
             local dist = math.sqrt(dir_x^2 + dir_y^2 + dir_z^2)
             updateTrackingScreen(dist, dir_x, dir_z, dir_y)
-        else -- Non-GPS rescanning mode
-            performScan(true) -- Do a silent scan
+        else
+            performScan(true) -- Silent scan for non-GPS mode
             if #state.last_scan_results > 0 then
                 target_lost = false
                 local new_closest = state.last_scan_results[1]
@@ -255,11 +244,20 @@ local function trackingLoop()
                 term.setCursorPos(1, 8); term.setTextColor(colors.red); term.write("Target lost!")
             end
         end
+    end
 
-        timer = os.startTimer(update_rate) -- Set the next timer
-        ::continue::
+    while true do
+        local event, p1 = os.pullEvent() -- Pull any event
+
+        if event == "timer" and p1 == timer then
+            updateTracker()
+            timer = os.startTimer(update_rate) -- Reset the timer
+        elseif event == "char" and (p1 == "b" or p1 == "q") then
+            state.current_menu = "scanning"; drawScanResults(); break
+        end
     end
 end
+
 
 -- MAIN PROGRAM EXECUTION
 drawMainMenu()
