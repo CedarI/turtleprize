@@ -1,13 +1,13 @@
 ---------------------------------------------------------------------
 -- ATM10 ORE FINDER - Advanced Pocket Computer Geo Scanner App
--- v3.3-complete - By CedarI, cleanup by Gemini
+-- v3.3-final - By CedarI, cleanup by Gemini
 ---------------------------------------------------------------------
 
 -- CONFIGURATION
 local SCAN_RADIUS = 16
 local TRACKING_UPDATE_RATE = 0.5
 local SCANNER_UPDATE_RATE = 2.0
-local VERSION = "3.3-complete"
+local VERSION = "3.3-final"
 
 -- *** SET TO true IF YOU HAVE AN ACTIVE GPS SATELLITE CLUSTER ***
 local USE_GPS = false
@@ -47,46 +47,47 @@ else
     print("GPS mode disabled in config.")
 end
 
+-- *** NEW: Interactive start to prevent freezing ***
 print("\nPress any key to start.")
-os.pullEvent("key")
+os.pullEvent("key") -- Waits for a single key press and consumes the event.
 
 ---------------------------------------------------------------------
--- ORE DEFINITIONS (Full List Restored)
+-- ORE DEFINITIONS (Full List)
 ---------------------------------------------------------------------
 local ORE_CATEGORIES = {
     { name = "ATM Special Ores", color = colors.purple, ores = {
-            {name = "Allthemodium", blocks = {"allthemodium:allthemodium_ore"}},
-            {name = "Vibranium", blocks = {"allthemodium:vibranium_ore"}},
-            {name = "Unobtainium", blocks = {"allthemodium:unobtainium_ore"}},
+        {name = "Allthemodium", blocks = {"allthemodium:allthemodium_ore"}},
+        {name = "Vibranium", blocks = {"allthemodium:vibranium_ore"}},
+        {name = "Unobtainium", blocks = {"allthemodium:unobtainium_ore"}},
     }},
     { name = "Precious Ores", color = colors.yellow, ores = {
-            {name = "Diamond", blocks = {"minecraft:diamond_ore", "minecraft:deepslate_diamond_ore"}},
-            {name = "Emerald", blocks = {"minecraft:emerald_ore", "minecraft:deepslate_emerald_ore"}},
-            {name = "Ancient Debris", blocks = {"minecraft:ancient_debris"}},
-            {name = "Gold", blocks = {"minecraft:gold_ore", "minecraft:deepslate_gold_ore", "minecraft:nether_gold_ore"}},
+        {name = "Diamond", blocks = {"minecraft:diamond_ore", "minecraft:deepslate_diamond_ore"}},
+        {name = "Emerald", blocks = {"minecraft:emerald_ore", "minecraft:deepslate_emerald_ore"}},
+        {name = "Ancient Debris", blocks = {"minecraft:ancient_debris"}},
+        {name = "Gold", blocks = {"minecraft:gold_ore", "minecraft:deepslate_gold_ore", "minecraft:nether_gold_ore"}},
     }},
     { name = "Technology Ores", color = colors.cyan, ores = {
-            {name = "Certus Quartz", blocks = {"ae2:certus_quartz_ore", "ae2:deepslate_certus_quartz_ore"}},
-            {name = "Osmium", blocks = {"mekanism:osmium_ore", "mekanism:deepslate_osmium_ore"}},
-            {name = "Uranium", blocks = {"mekanism:uranium_ore", "mekanism:deepslate_uranium_ore"}},
-            {name = "Zinc", blocks = {"create:zinc_ore", "create:deepslate_zinc_ore"}},
+        {name = "Certus Quartz", blocks = {"ae2:certus_quartz_ore"}},
+        {name = "Osmium", blocks = {"mekanism:osmium_ore"}},
+        {name = "Uranium", blocks = {"mekanism:uranium_ore"}},
+        {name = "Zinc", blocks = {"create:zinc_ore", "create:deepslate_zinc_ore"}},
     }},
     { name = "Industrial Ores", color = colors.orange, ores = {
-            {name = "Tin", blocks = {"thermal:tin_ore", "thermal:deepslate_tin_ore", "mekanism:tin_ore"}},
-            {name = "Lead", blocks = {"thermal:lead_ore", "thermal:deepslate_lead_ore", "mekanism:lead_ore"}},
-            {name = "Silver", blocks = {"thermal:silver_ore", "thermal:deepslate_silver_ore"}},
-            {name = "Nickel", blocks = {"thermal:nickel_ore", "thermal:deepslate_nickel_ore"}},
+        {name = "Tin", blocks = {"thermal:tin_ore", "thermal:deepslate_tin_ore", "mekanism:tin_ore"}},
+        {name = "Lead", blocks = {"thermal:lead_ore", "thermal:deepslate_lead_ore", "mekanism:lead_ore"}},
+        {name = "Silver", blocks = {"thermal:silver_ore", "thermal:deepslate_silver_ore"}},
+        {name = "Nickel", blocks = {"thermal:nickel_ore", "thermal:deepslate_nickel_ore"}},
     }},
     { name = "Common Ores", color = colors.lightGray, ores = {
-            {name = "Iron", blocks = {"minecraft:iron_ore", "minecraft:deepslate_iron_ore"}},
-            {name = "Copper", blocks = {"minecraft:copper_ore", "minecraft:deepslate_copper_ore"}},
-            {name = "Coal", blocks = {"minecraft:coal_ore", "minecraft:deepslate_coal_ore"}},
-            {name = "Redstone", blocks = {"minecraft:redstone_ore", "minecraft:deepslate_redstone_ore"}},
+        {name = "Iron", blocks = {"minecraft:iron_ore", "minecraft:deepslate_iron_ore"}},
+        {name = "Copper", blocks = {"minecraft:copper_ore", "minecraft:deepslate_copper_ore"}},
+        {name = "Coal", blocks = {"minecraft:coal_ore", "minecraft:deepslate_coal_ore"}},
+        {name = "Redstone", blocks = {"minecraft:redstone_ore", "minecraft:deepslate_redstone_ore"}},
     }},
     { name = "Nether Ores", color = colors.red, ores = {
-            {name = "Ancient Debris", blocks = {"minecraft:ancient_debris"}},
-            {name = "Nether Quartz", blocks = {"minecraft:nether_quartz_ore"}},
-            {name = "Nether Gold", blocks = {"minecraft:nether_gold_ore"}},
+        {name = "Ancient Debris", blocks = {"minecraft:ancient_debris"}},
+        {name = "Nether Quartz", blocks = {"minecraft:nether_quartz_ore"}},
+        {name = "Nether Gold", blocks = {"minecraft:nether_gold_ore"}},
     }}
 }
 
@@ -192,7 +193,6 @@ local function mainLoop()
         if event == "char" then
             local key = p1
             if key == "q" then state.current_menu = "quit"; break end
-
             if state.current_menu == "main" then
                 local c = tonumber(key)
                 if c and ORE_CATEGORIES[c] then state.selected_category=ORE_CATEGORIES[c]; state.current_menu="ore_select"; drawOreMenu() end
@@ -214,7 +214,7 @@ end
 
 local function trackingLoop()
     drawHeader("Live Tracker")
-    local update_rate = USE_GPS and GPS_UPDATE_RATE or SCANNER_UPDATE_RATE
+    local update_rate = USE_GPS and TRACKING_UPDATE_RATE or SCANNER_UPDATE_RATE
     local timer = os.startTimer(0)
     local target_lost = false
 
@@ -248,7 +248,10 @@ end
 -- MAIN PROGRAM
 while state.current_menu ~= "quit" do
     if state.current_menu == "tracking" then trackingLoop()
-    else mainLoop() end
+    else
+        drawMainMenu()
+        mainLoop()
+    end
 end
 
 clearScreen(); print("Thanks for using ATM10 Ore Finder!")
