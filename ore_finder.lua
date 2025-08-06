@@ -196,4 +196,83 @@ local function mainLoop()
         if state.current_menu == "main" then
             local choice = tonumber(key)
             if choice and choice >= 1 and choice <= #ORE_CATEGORIES then
-                state.selected_category = ORE_CATEGORIES[choice]; state.current_menu = "ore
+                state.selected_category = ORE_CATEGORIES[choice]; state.current_menu = "ore_select"; drawOreMenu()
+            end
+        elseif state.current_menu == "ore_select" then
+            if key == "b" then state.current_menu = "main"; drawMainMenu(); goto continue end
+            local choice = tonumber(key)
+            if choice and choice >= 1 and choice <= #state.selected_category.ores then
+                state.selected_ore = state.selected_category.ores[choice]; state.current_menu = "scanning"; performScan(false)
+            end
+        elseif state.current_menu == "scanning" then
+            if key == "b" then state.current_menu = "ore_select"; drawOreMenu()
+            elseif key == "r" then performScan(false)
+            elseif key == "t" and #state.last_scan_results > 0 then
+                state.target_ore = state.last_scan_results[1]; state.current_menu = "tracking"; break
+            end
+        end
+        ::continue::
+    end
+end
+
+local function trackingLoop()
+    drawHeader("Live Tracking Mode")
+    local _, h = term.getSize(); term.setCursorPos(1, h); term.write("Press 'b' or 'q' to stop tracking.")
+
+    local update_rate = has_gps and GPS_UPDATE_RATE or SCANNER_UPDATE_RATE
+    local timer = os.startTimer(update_rate)
+    local target_lost = false
+
+    -- Initial Draw
+    if has_gps then
+        updatePlayerPosition()
+        local target_pos = state.target_ore.abs_pos
+        local dir_x = target_pos.x - state.player_pos.x
+        local dir_y = target_pos.y - state.player_pos.y
+        local dir_z = target_pos.z - state.player_pos.z
+        local dist = math.sqrt(dir_x^2 + dir_y^2 + dir_z^2)
+        updateTrackingScreen(dist, dir_x, dir_z, dir_y)
+    else
+        updateTrackingScreen(state.target_ore.distance, state.target_ore.x, state.target_ore.z, state.target_ore.y)
+    end
+
+    while state.current_menu == "tracking" do
+        local event, p1 = os.pullEvent()
+        if (event == "char" and (p1 == "b" or p1 == "q")) then
+            state.current_menu = "scanning"; drawScanResults(); break
+        elseif event == "timer" and p1 == timer then
+            if has_gps then
+                updatePlayerPosition()
+                local target_pos = state.target_ore.abs_pos
+                local dir_x = target_pos.x - state.player_pos.x
+                local dir_y = target_pos.y - state.player_pos.y
+                local dir_z = target_pos.z - state.player_pos.z
+                local dist = math.sqrt(dir_x^2 + dir_y^2 + dir_z^2)
+                updateTrackingScreen(dist, dir_x, dir_z, dir_y)
+            else
+                performScan(true) -- Silent scan for non-GPS mode
+                if #state.last_scan_results > 0 then
+                    target_lost = false
+                    local new_closest = state.last_scan_results[1]
+                    updateTrackingScreen(new_closest.distance, new_closest.x, new_closest.z, new_closest.y)
+                elseif not target_lost then
+                    target_lost = true
+                    term.setCursorPos(1, 8); term.setTextColor(colors.red); term.write("Target lost!")
+                end
+            end
+            timer = os.startTimer(update_rate)
+        end
+    end
+end
+
+-- MAIN PROGRAM EXECUTION
+drawMainMenu()
+while state.current_menu ~= "quit" do
+    if state.current_menu == "tracking" then
+        trackingLoop()
+    else
+        mainLoop()
+    end
+end
+
+clearScreen(); print("Thanks for using ATM10 Ore Finder!")
