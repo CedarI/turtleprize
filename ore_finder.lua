@@ -6,7 +6,7 @@
 -- CONFIGURATION
 local SCAN_RADIUS = 16
 local TRACKING_UPDATE_RATE = 0.5
-local VERSION = "3.1-final"
+local VERSION = "3.0-final"
 
 -- *** SET TO true IF YOU HAVE AN ACTIVE GPS SATELLITE CLUSTER ***
 local USE_GPS = false
@@ -44,7 +44,7 @@ local function safeLocate()
         state.has_fix = false
         return
     end
-    -- timeout of 5 seconds so it doesn't block indefinitely
+    -- timeout to avoid indefinite blocking
     local x, y, z = gps.locate(5)
     if x then
         state.player_pos = {x = x, y = y, z = z}
