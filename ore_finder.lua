@@ -314,3 +314,4 @@ end
 
 clearScreen()
 print("Thanks for using ATM10 Ore Finder!")
+
